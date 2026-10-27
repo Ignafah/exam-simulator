@@ -9,6 +9,7 @@ Voir `CLAUDE.md` pour le produit, l'architecture cible et les conventions.
 | Dossier | Contenu |
 |---|---|
 | `backend/` | API ASP.NET Core (.NET 10) : `src/` (Domain, Application, Infrastructure, Api) et `tests/` |
+| `frontend/` | Application React + TypeScript + Vite, installable en PWA (Node 22 requis) |
 | `legacy/` | Ancien prototype React + Vite (référence fonctionnelle, en cours de migration) |
 | `docs/adr/` | Décisions d'architecture |
 
@@ -19,6 +20,18 @@ Backend (SDK .NET 10 requis) :
 ```bash
 dotnet build backend
 dotnet test backend
+```
+
+Frontend (Node 22 requis), depuis la racine du dépôt :
+
+```bash
+npm ci --prefix frontend                  # installer les dépendances
+npm run dev --prefix frontend             # serveur de développement
+npm run lint --prefix frontend            # analyse statique (ESLint)
+npm run test --prefix frontend            # tests (une seule exécution)
+npm run build --prefix frontend           # build de production dans frontend/dist
+npm run preview --prefix frontend         # servir le build localement
+npm run generate-pwa-assets --prefix frontend  # régénérer les icônes depuis public/icon.svg
 ```
 
 Prototype legacy :
