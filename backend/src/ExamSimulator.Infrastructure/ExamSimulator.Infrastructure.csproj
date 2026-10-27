@@ -1,0 +1,8 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\ExamSimulator.Application\ExamSimulator.Application.csproj" />
+    <ProjectReference Include="..\ExamSimulator.Domain\ExamSimulator.Domain.csproj" />
+  </ItemGroup>
+
+</Project>
