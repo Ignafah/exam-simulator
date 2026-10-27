@@ -60,3 +60,44 @@ jobs:
 
       - name: Build
         run: npm run build --prefix legacy
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Tant que frontend/ n'existe pas sur la branche, le job réussit sans rien faire.
+      - name: Detect frontend
+        id: detect
+        run: |
+          if [ -f frontend/package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Pas encore de dossier frontend/ : vérifications ignorées."
+          fi
+
+      - name: Setup Node 22
+        if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install
+        if: steps.detect.outputs.present == 'true'
+        run: npm ci --prefix frontend
+
+      - name: Lint
+        if: steps.detect.outputs.present == 'true'
+        run: npm run lint --prefix frontend
+
+      - name: Test
+        if: steps.detect.outputs.present == 'true'
+        run: npm run test --prefix frontend
+
+      - name: Build
+        if: steps.detect.outputs.present == 'true'
+        run: npm run build --prefix frontend
