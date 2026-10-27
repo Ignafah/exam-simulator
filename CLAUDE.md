@@ -25,18 +25,21 @@ Priorités produit, dans l'ordre :
 
 ## 2. État actuel du repo
 
-**Legacy (à la racine, en cours de migration)** : prototype React + Vite en JavaScript.
-- `src/App.jsx`, `src/main.jsx` : interface
-- `src/data.js` : questions AZ-204 codées en dur
-- Pas de backend, pas de tests, pas de TypeScript.
+- `backend/` : solution .NET (4 projets + 4 projets de tests), endpoint technique `GET /health`,
+  tests d'architecture. Aucune entité métier pour l'instant.
+- `frontend/` : React + TypeScript + Vite en PWA, une page d'accueil. Aucun appel API pour l'instant.
+- `legacy/` : ancien prototype React + Vite en JavaScript (`legacy/src/data.js` contient des questions AZ-204).
+- `docs/adr/` : décisions d'architecture 0001 et 0002.
+- `.github/workflows/` : CI (jobs `backend`, `legacy`, `frontend`) et workflows des agents.
 
 Règles pour le legacy :
-- Ne le modifie pas, sauf si le ticket concerne explicitement la migration.
+- Ne le modifie pas.
 - Il sert de référence fonctionnelle, pas de modèle de code.
-- Les questions de `src/data.js` ne seront importées qu'après relecture humaine (voir section 8).
+- Les questions de `legacy/src/data.js` ne seront importées qu'après relecture humaine (voir section 8).
+  L'examen AZ-204 a été retiré par Microsoft le 31/07/2026 : ces questions servent uniquement de données de test.
 
-**La cible est décrite ci-dessous.** Tant que l'arborescence cible n'existe pas,
-seuls les tickets de mise en place de la structure peuvent la créer.
+La cible complète est décrite ci-dessous. `docker-compose.yml` n'existe pas encore :
+il sera créé par le premier ticket de persistance.
 
 ---
 
@@ -119,7 +122,8 @@ seuls les tickets de mise en place de la structure peuvent la créer.
 
 **Tests**
 - Backend : xUnit, Shouldly, Testcontainers (PostgreSQL), `WebApplicationFactory`, NetArchTest.Rules
-- Frontend : Vitest, Testing Library
+- Frontend : Vitest, Testing Library (`@testing-library/react`, `@testing-library/dom`, `@testing-library/jest-dom`), jsdom
+- Icônes PWA : `@vite-pwa/assets-generator` (script `npm run generate-pwa-assets`)
 
 ---
 
@@ -160,7 +164,10 @@ Types de questions (v1) : `SingleChoice`, `MultipleChoice`, `TrueFalse`.
 - Noms en anglais. Commentaires uniquement pour expliquer un *pourquoi* non évident.
 - Pas d'opérateur `!` (null-forgiving) sans commentaire justifiant pourquoi c'est sûr.
 - `async`/`await` de bout en bout, `CancellationToken` propagé dans toutes les méthodes async.
-- Pas d'exceptions pour le flux métier attendu : retourne un résultat typé (`Result<T>` défini dans Application).
+- Pas d'exceptions pour le flux métier attendu : retourne un résultat typé `Result` / `Result<T>`,
+  défini dans `ExamSimulator.Domain` (dossier `Common/`), car le Domain ne peut référencer aucun autre projet.
+  Les entités sont créées par une méthode statique `Create(...)` qui retourne `Result<T>` (pas de constructeur public).
+  Une exception n'est utilisée que pour une erreur de programmation (cas qui ne devrait jamais arriver).
 - Classes `sealed` par défaut. Records pour les DTOs.
 - Pas de `DateTime.Now` : utilise `TimeProvider` injecté (testable).
 
@@ -217,10 +224,8 @@ Types de questions (v1) : `SingleChoice`, `MultipleChoice`, `TrueFalse`.
 
 ## 10. Commandes
 
-> Ces commandes n'existent qu'une fois la structure cible créée.
-
 ```bash
-# Base de données locale
+# Base de données locale (à venir, premier ticket de persistance)
 docker compose up -d
 
 # Backend
@@ -268,7 +273,7 @@ Closes #<numéro>
 ## Ce qui change
 ## Critères d'acceptation → tests correspondants
 ## Hypothèses prises
-## Dépendances ajoutées (et pourquoi)
+## Dépendances ajoutées (et pourquoi, y compris tout écart à la liste autorisée par le ticket)
 ## Migrations (oui/non, destructive ?)
 ## Points à vérifier en priorité par le relecteur
 ```
