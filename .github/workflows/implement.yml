@@ -50,8 +50,8 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: >-
-            --max-turns 60
-            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(mkdir:*),Bash(dotnet:*),Bash(npm ci:*),Bash(npm run build:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git switch:*),Bash(git add:*),Bash(git mv:*),Bash(git commit:*),Bash(git push:*),Bash(git check-ignore:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh pr create:*)"
+            --max-turns 100
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(mkdir:*),Bash(dotnet:*),Bash(npm ci:*),Bash(npm run build:*),Bash(npm run test:*),Bash(npm run lint:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git switch:*),Bash(git add:*),Bash(git mv:*),Bash(git rm:*),Bash(git commit:*),Bash(git push:*),Bash(git check-ignore:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh pr create:*)"
           prompt: |
             Tu es développeur sur le projet décrit dans CLAUDE.md.
             Ta mission : implémenter l'issue #${{ github.event.issue.number }}.
@@ -69,18 +69,26 @@ jobs:
             5. Reste strictement dans le périmètre. Aucune dépendance hors de celles autorisées.
             6. N'utilise jamais "cd dossier && commande". Utilise des chemins :
                dotnet build backend / dotnet test backend
-               npm ci --prefix legacy / npm run build --prefix legacy
+               npm ci --prefix <dossier> / npm run build --prefix <dossier>
+               npm run lint --prefix <dossier> / npm run test --prefix <dossier>
+               (<dossier> = legacy ou frontend selon ce que le ticket touche)
             7. Toutes les commandes concernées doivent réussir avant d'ouvrir la PR.
-            8. Relis ton diff (git diff main) critère par critère.
+
+            ## Nettoyage avant livraison (obligatoire)
+            8. Supprime avec git rm (ne te contente pas de les vider) :
+               - les fichiers générés par les modèles de projet et inutilisés (Class1.cs, UnitTest1.cs, etc.) ;
+               - tout fichier temporaire créé pour une vérification (par exemple une violation volontaire de règle).
+            9. Aucun fichier vide et aucun test qui ne vérifie rien (méthode de test sans assertion) dans le diff.
+            10. Relis ton diff (git diff main) critère par critère, puis vérifie git status.
 
             ## Livraison
-            9. Commits clairs, puis : git push -u origin ai/issue-${{ github.event.issue.number }}
-            10. Écris la description de PR dans /tmp/pr.md avec le modèle de CLAUDE.md section 11.
+            11. Commits clairs, puis : git push -u origin ai/issue-${{ github.event.issue.number }}
+            12. Écris la description de PR dans /tmp/pr.md avec le modèle de CLAUDE.md section 11.
                 Pour CHAQUE critère d'acceptation : le test qui le couvre, ou la vérification
                 manuelle que le mainteneur doit faire (et comment la faire, en termes simples).
-            11. gh pr create --draft --base main --head ai/issue-${{ github.event.issue.number }} --title "<titre clair>" --body-file /tmp/pr.md
-            12. gh issue comment ${{ github.event.issue.number }} --body "PR ouverte : <lien de la PR>"
-            13. gh issue edit ${{ github.event.issue.number }} --remove-label ready-for-agent
+            13. gh pr create --draft --base main --head ai/issue-${{ github.event.issue.number }} --title "<titre clair>" --body-file /tmp/pr.md
+            14. gh issue comment ${{ github.event.issue.number }} --body "PR ouverte : <lien de la PR>"
+            15. gh issue edit ${{ github.event.issue.number }} --remove-label ready-for-agent
 
             ## Quand t'arrêter SANS ouvrir de PR
             - Contradiction entre le ticket, CLAUDE.md et le code.
