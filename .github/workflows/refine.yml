@@ -1,0 +1,72 @@
+name: Refine idea
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  refine:
+    # Se déclenche uniquement quand TOI tu poses le label "refine".
+    if: |
+      github.event.label.name == 'refine' &&
+      github.event.sender.login == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read      # lecture seule : aucune modification du code possible
+      issues: write       # pour commenter et changer les labels
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Refine with Claude
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: >-
+            --max-turns 20
+            --allowedTools "Read,Glob,Grep,Write,Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*)"
+          prompt: |
+            Tu es analyste technique sur le projet décrit dans CLAUDE.md.
+            Ta mission : transformer l'idée de l'issue #${{ github.event.issue.number }} en spécification.
+
+            1. Lis CLAUDE.md en entier.
+            2. Lis l'issue et tous ses commentaires : gh issue view ${{ github.event.issue.number }} --comments
+               Si des commentaires du mainteneur répondent à une spec précédente, ils font foi.
+            3. Lis le code existant concerné.
+            4. N'écris AUCUN code et ne modifie AUCUN fichier du projet.
+
+            Rédige la spec dans le fichier /tmp/spec.md avec exactement ces sections :
+
+            ## Résumé (2 lignes, compréhensibles par un débutant)
+            ## Problème métier
+            ## Valeur attendue (pour qui, quel gain)
+            ## Avis critique
+            Dis clairement si l'idée est redondante, surdimensionnée, prématurée vu l'état du projet,
+            ou de faible valeur. Si elle dépend d'un autre ticket non fait, dis lequel.
+            ## Hors périmètre
+            ## Critères d'acceptation
+            Format Given / When / Then, chacun testable automatiquement.
+            ## Approche technique
+            Couches et fichiers concernés, en respectant CLAUDE.md. Une alternative écartée et pourquoi.
+            ## Hypothèses
+            Liste numérotée. Chaque hypothèse que tu as faite faute d'information.
+            ## Questions ouvertes
+            Liste numérotée. Ne tranche pas seul ce qui relève d'un choix du mainteneur.
+            ## Risques
+            Sécurité, données, migration, performance, contenu (voir section 8 de CLAUDE.md).
+            ## Taille : S, M ou L
+            Si L : propose un découpage en sous-tickets de taille S ou M, dans l'ordre.
+
+            Règles :
+            - Si tu n'as aucune hypothèse ni question ouverte, relis : c'est presque toujours une erreur.
+            - Écris en français simple, le mainteneur débute.
+
+            Enfin :
+            - gh issue comment ${{ github.event.issue.number }} --body-file /tmp/spec.md
+            - gh issue edit ${{ github.event.issue.number }} --remove-label refine --add-label to-validate
