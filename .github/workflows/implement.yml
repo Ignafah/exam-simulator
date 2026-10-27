@@ -51,7 +51,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: >-
             --max-turns 100
-            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(mkdir:*),Bash(dotnet:*),Bash(npm ci:*),Bash(npm run build:*),Bash(npm run test:*),Bash(npm run lint:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git switch:*),Bash(git add:*),Bash(git mv:*),Bash(git rm:*),Bash(git commit:*),Bash(git push:*),Bash(git check-ignore:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh pr create:*)"
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(mkdir:*),Bash(dotnet:*),Bash(npm ci:*),Bash(npm install:*),Bash(npm create vite:*),Bash(npm run:*),Bash(npx @vite-pwa/assets-generator:*),Bash(npx pwa-assets-generator:*),Bash(npx tsc:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git switch:*),Bash(git add:*),Bash(git mv:*),Bash(git rm:*),Bash(git commit:*),Bash(git push:*),Bash(git check-ignore:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh pr create:*)"
           prompt: |
             Tu es développeur sur le projet décrit dans CLAUDE.md.
             Ta mission : implémenter l'issue #${{ github.event.issue.number }}.
@@ -72,6 +72,8 @@ jobs:
                npm ci --prefix <dossier> / npm run build --prefix <dossier>
                npm run lint --prefix <dossier> / npm run test --prefix <dossier>
                (<dossier> = legacy ou frontend selon ce que le ticket touche)
+               Pour créer un projet ou ajouter un paquet : npm create vite / npm install --prefix <dossier>,
+               uniquement avec les paquets autorisés par le ticket.
             7. Toutes les commandes concernées doivent réussir avant d'ouvrir la PR.
 
             ## Nettoyage avant livraison (obligatoire)
