@@ -6,8 +6,12 @@ on:
 
 jobs:
   refine:
-    # Se déclenche uniquement quand TOI tu poses le label "refine".
+    # Conditions de déclenchement :
+    # - l'interrupteur général AUTOMATION_ENABLED vaut "true" (variable du repo) ;
+    # - le label posé est "refine" ;
+    # - c'est TOI qui l'as posé.
     if: |
+      vars.AUTOMATION_ENABLED == 'true' &&
       github.event.label.name == 'refine' &&
       github.event.sender.login == github.repository_owner
     runs-on: ubuntu-latest
@@ -16,6 +20,9 @@ jobs:
       contents: read      # lecture seule : aucune modification du code possible
       issues: write       # pour commenter et changer les labels
       id-token: write
+    env:
+      ISSUE: ${{ github.event.issue.number }}
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,6 +30,8 @@ jobs:
           fetch-depth: 1
 
       - name: Refine with Claude
+        # On ne s'arrête pas ici en cas d'erreur : c'est l'étape "Verify outcome" qui juge le résultat.
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -30,7 +39,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: >-
             --max-turns 20
-            --allowedTools "Read,Glob,Grep,Write,Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*)"
+            --allowedTools "Read,Glob,Grep,Write,Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh issue comment:*),Bash(gh issue edit:*)"
           prompt: |
             Tu es analyste technique sur le projet décrit dans CLAUDE.md.
             Ta mission : transformer l'idée de l'issue #${{ github.event.issue.number }} en spécification.
@@ -38,8 +47,10 @@ jobs:
             1. Lis CLAUDE.md en entier.
             2. Lis l'issue et tous ses commentaires : gh issue view ${{ github.event.issue.number }} --comments
                Si des commentaires du mainteneur répondent à une spec précédente, ils font foi.
-            3. Lis le code existant concerné.
-            4. N'écris AUCUN code et ne modifie AUCUN fichier du projet.
+               Si l'issue cite un ticket parent, lis-le aussi avec ses commentaires.
+            3. Pour repérer les tickets existants ou liés : gh issue list --state all --limit 50
+            4. Lis le code existant concerné.
+            5. N'écris AUCUN code et ne modifie AUCUN fichier du projet.
 
             Rédige la spec dans le fichier /tmp/spec.md avec exactement ces sections :
 
@@ -51,9 +62,14 @@ jobs:
             ou de faible valeur. Si elle dépend d'un autre ticket non fait, dis lequel.
             ## Hors périmètre
             ## Critères d'acceptation
-            Format Given / When / Then, chacun testable automatiquement.
+            Format Given / When / Then.
+            - Ce qui peut régresser au fil des tickets (comportement, règles) : test automatisé.
+            - Ce qui est posé une seule fois (contenu d'un fichier de configuration, liste de dépendances,
+              manifeste) : marque-le "vérification manuelle en review". Ne propose JAMAIS de script ou de test
+              qui lit des fichiers de configuration pour les vérifier.
             ## Approche technique
             Couches et fichiers concernés, en respectant CLAUDE.md. Une alternative écartée et pourquoi.
+            Liste les commandes et dépendances nécessaires (npm, dotnet, outils de génération).
             ## Hypothèses
             Liste numérotée. Chaque hypothèse que tu as faite faute d'information.
             ## Questions ouvertes
@@ -70,3 +86,23 @@ jobs:
             Enfin :
             - gh issue comment ${{ github.event.issue.number }} --body-file /tmp/spec.md
             - gh issue edit ${{ github.event.issue.number }} --remove-label refine --add-label to-validate
+
+      # Détection des échecs silencieux : la spec doit avoir été postée (label to-validate).
+      - name: Verify outcome
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name] | join(",")')
+
+          if echo ",$LABELS," | grep -q ",to-validate,"; then
+            echo "OK : spec postée, label to-validate présent."
+            exit 0
+          fi
+
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          gh issue edit "$ISSUE" --add-label needs-human
+          gh issue edit "$ISSUE" --remove-label refine || true
+          gh issue comment "$ISSUE" --body "L'agent de raffinement s'est arrêté sans poster de spec. Intervention nécessaire. Journal : $RUN_URL"
+          echo "ÉCHEC : pas de spec postée."
+          exit 1
