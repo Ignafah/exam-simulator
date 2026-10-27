@@ -1,7 +1,7 @@
 ---
-Name: Idée
-About: Idée brute à raffiner par l'agent
-Title: "[Idée] "
+name: Idée
+about: Idée brute à raffiner par l'agent
+title: "[Idée] "
 ---
 
 ## Idée (2-3 lignes)
