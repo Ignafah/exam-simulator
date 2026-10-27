@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ExamSimulator.Api/ExamSimulator.Api.csproj" />
+    <Project Path="src/ExamSimulator.Application/ExamSimulator.Application.csproj" />
+    <Project Path="src/ExamSimulator.Domain/ExamSimulator.Domain.csproj" />
+    <Project Path="src/ExamSimulator.Infrastructure/ExamSimulator.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ExamSimulator.Api.IntegrationTests/ExamSimulator.Api.IntegrationTests.csproj" />
+    <Project Path="tests/ExamSimulator.Application.Tests/ExamSimulator.Application.Tests.csproj" />
+    <Project Path="tests/ExamSimulator.ArchitectureTests/ExamSimulator.ArchitectureTests.csproj" />
+    <Project Path="tests/ExamSimulator.Domain.Tests/ExamSimulator.Domain.Tests.csproj" />
+  </Folder>
+</Solution>
