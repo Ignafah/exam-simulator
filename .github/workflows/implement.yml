@@ -11,22 +11,41 @@ concurrency:
 
 jobs:
   implement:
-    # Se déclenche uniquement quand TOI tu poses le label "ready-for-agent".
+    # Conditions de déclenchement :
+    # - l'interrupteur général AUTOMATION_ENABLED vaut "true" (variable du repo) ;
+    # - le label posé est "ready-for-agent" ;
+    # - c'est TOI qui l'as posé.
     if: |
+      vars.AUTOMATION_ENABLED == 'true' &&
       github.event.label.name == 'ready-for-agent' &&
       github.event.sender.login == github.repository_owner
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: write        # pousser sa branche (main reste protégée par le ruleset)
-      pull-requests: write   # ouvrir la PR en brouillon
-      issues: write          # commenter et changer les labels
+      contents: read
+      issues: write
+      pull-requests: write
       id-token: write
+    env:
+      ISSUE: ${{ github.event.issue.number }}
+      GH_REPO: ${{ github.repository }}
     steps:
+      # Jeton de l'application GitHub de l'agent.
+      # Contrairement au jeton par défaut, ses actions (PR, push, labels) déclenchent les autres
+      # workflows : la CI démarre donc toute seule sur la PR de l'agent.
+      # L'application n'a pas la permission "Workflows" : elle ne peut pas modifier .github/workflows/.
+      - name: Generate agent token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
@@ -44,9 +63,11 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Implement with Claude
+        # On ne s'arrête pas ici en cas d'erreur : c'est l'étape "Verify outcome" qui juge le résultat.
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: >-
@@ -88,6 +109,8 @@ jobs:
             12. Écris la description de PR dans /tmp/pr.md avec le modèle de CLAUDE.md section 11.
                 Pour CHAQUE critère d'acceptation : le test qui le couvre, ou la vérification
                 manuelle que le mainteneur doit faire (et comment la faire, en termes simples).
+                Dans "Dépendances ajoutées" : déclare TOUT écart à la liste autorisée par le ticket
+                (même une dépendance obligatoire d'un paquet autorisé), avec sa raison.
             13. gh pr create --draft --base main --head ai/issue-${{ github.event.issue.number }} --title "<titre clair>" --body-file /tmp/pr.md
             14. gh issue comment ${{ github.event.issue.number }} --body "PR ouverte : <lien de la PR>"
             15. gh issue edit ${{ github.event.issue.number }} --remove-label ready-for-agent
@@ -97,6 +120,7 @@ jobs:
             - Information manquante pour un choix métier ou technique.
             - Besoin d'une dépendance non autorisée.
             - Une commande échoue encore après 3 tentatives de correction.
+            - Une commande dont tu as besoin t'est refusée (permission).
             Dans ce cas : explique précisément le blocage en commentaire sur l'issue
             (ce qui est fait, ce qui bloque, la question), puis
             gh issue edit ${{ github.event.issue.number }} --remove-label ready-for-agent --add-label needs-clarification
@@ -104,3 +128,30 @@ jobs:
             ## Interdits absolus
             Pousser sur main, modifier CLAUDE.md ou .github/, désactiver ou affaiblir un test,
             ajouter NoWarn ou #pragma warning disable sans justification écrite dans la PR.
+
+      # Détection des échecs silencieux : l'agent doit avoir produit une PR
+      # OU posé needs-clarification. Sinon, on alerte le mainteneur.
+      - name: Verify outcome
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          PR_URL=$(gh pr list --head "ai/issue-$ISSUE" --state all --json url --jq '.[0].url // ""')
+          LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name] | join(",")')
+
+          if [ -n "$PR_URL" ]; then
+            echo "OK : PR trouvée : $PR_URL"
+            exit 0
+          fi
+
+          if echo ",$LABELS," | grep -q ",needs-clarification,"; then
+            echo "OK : l'agent a demandé une clarification sur l'issue."
+            exit 0
+          fi
+
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          gh issue edit "$ISSUE" --add-label needs-human
+          gh issue edit "$ISSUE" --remove-label ready-for-agent || true
+          gh issue comment "$ISSUE" --body "L'agent d'implémentation s'est arrêté sans ouvrir de PR ni poser de question. Intervention nécessaire. Journal : $RUN_URL"
+          echo "ÉCHEC : ni PR, ni demande de clarification."
+          exit 1
