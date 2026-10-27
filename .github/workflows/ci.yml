@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    # ready_for_review : la CI tourne quand TU sors une PR de l'agent du mode brouillon.
+    # Utile car une PR créée par un workflow ne déclenche pas toujours les autres workflows.
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:   # bouton "Run workflow" pour lancer la CI à la main
+
+# Lecture seule : la CI vérifie, elle ne modifie rien.
+permissions:
+  contents: read
+
+# Si tu pousses un nouveau commit sur la même PR, l'exécution précédente est annulée.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET (version lue dans global.json)
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore backend
+
+      - name: Build
+        run: dotnet build backend --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test backend --no-build --configuration Release
+
+  legacy:
+    name: legacy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install
+        run: npm ci --prefix legacy
+
+      - name: Build
+        run: npm run build --prefix legacy
