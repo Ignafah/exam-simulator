@@ -54,7 +54,10 @@ npm run test --prefix frontend            # tests (une seule exécution)
 npm run build --prefix frontend           # build de production dans frontend/dist
 npm run preview --prefix frontend         # servir le build localement
 npm run generate-pwa-assets --prefix frontend  # régénérer les icônes depuis public/icon.svg
+npm run generate-api-types --prefix frontend   # régénérer frontend/src/api/schema.d.ts depuis backend/openapi/openapi.json
 ```
+
+Le frontend lit l'URL de l'API dans `VITE_API_BASE_URL` (voir `frontend/.env.example`, à copier vers `frontend/.env.local`). Après toute modification de `backend/openapi/openapi.json`, lance `generate-api-types` et commite `schema.d.ts`.
 
 Prototype legacy :
 
