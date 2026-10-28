@@ -10,5 +10,6 @@
     <Project Path="tests/ExamSimulator.Application.Tests/ExamSimulator.Application.Tests.csproj" />
     <Project Path="tests/ExamSimulator.ArchitectureTests/ExamSimulator.ArchitectureTests.csproj" />
     <Project Path="tests/ExamSimulator.Domain.Tests/ExamSimulator.Domain.Tests.csproj" />
+    <Project Path="tests/ExamSimulator.Infrastructure.Tests/ExamSimulator.Infrastructure.Tests.csproj" />
   </Folder>
 </Solution>

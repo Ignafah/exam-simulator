@@ -37,6 +37,17 @@ public sealed class DependencyRulesTests
     }
 
     [Fact]
+    public void Domain_et_Application_ne_dependent_ni_d_EF_Core_ni_de_Npgsql()
+    {
+        var result = Types.InAssemblies([DomainAssembly, ApplicationAssembly])
+            .ShouldNot()
+            .HaveDependencyOnAny("Microsoft.EntityFrameworkCore", "Npgsql")
+            .GetResult();
+
+        result.IsSuccessful.ShouldBeTrue();
+    }
+
+    [Fact]
     public void Infrastructure_ne_depend_pas_d_Api()
     {
         var result = Types.InAssembly(InfrastructureAssembly)

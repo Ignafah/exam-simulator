@@ -1,0 +1,16 @@
+# Développement local uniquement : ce mot de passe est fictif et ne doit jamais servir ailleurs.
+# La version de PostgreSQL doit rester identique à celle des tests (PostgreSqlFixture.cs).
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: examsimulator
+      POSTGRES_PASSWORD: dev-only-password
+      POSTGRES_DB: examsimulator
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+
+volumes:
+  postgres-data:
