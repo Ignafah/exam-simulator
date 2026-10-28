@@ -22,6 +22,10 @@ dotnet build backend
 dotnet test backend   # Docker doit être démarré : les tests lancent un vrai PostgreSQL (Testcontainers)
 ```
 
+Document OpenAPI : il est généré à chaque `dotnet build backend` dans `backend/openapi/openapi.json` (paquet `Microsoft.Extensions.ApiDescription.Server`, sans base ni configuration) et ce fichier est commité pour que le frontend génère ses types sans lancer l'API. Après toute modification d'un endpoint, relance le build et commite le fichier mis à jour. L'API sert aussi le document sur `GET /openapi/v1.json`.
+
+Configuration CORS : `Cors:AllowedOrigins` (liste d'origines). `http://localhost:5173` en développement ; vide par défaut ailleurs (variable d'environnement `Cors__AllowedOrigins__0`, etc.).
+
 Base de données locale (Docker requis) :
 
 ```bash
