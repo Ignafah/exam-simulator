@@ -30,7 +30,7 @@ public sealed class SubjectTests
     [InlineData("   ")]
     public void Create_WithBlankName_FailsWithNameRequired(string? name)
     {
-        var result = Subject.Create(name!, null, CategoryId);
+        var result = Subject.Create(name, null, CategoryId);
 
         result.IsFailure.ShouldBeTrue();
         result.Error.ShouldBe(SubjectErrors.NameRequired);

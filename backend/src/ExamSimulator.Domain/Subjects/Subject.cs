@@ -23,7 +23,7 @@ public sealed class Subject
 
     public Guid CategoryId { get; }
 
-    public static Result<Subject> Create(string name, string? description, Guid categoryId)
+    public static Result<Subject> Create(string? name, string? description, Guid categoryId)
     {
         var trimmedName = name?.Trim();
 

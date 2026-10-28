@@ -16,7 +16,7 @@ public sealed class Category
 
     public string Name { get; }
 
-    public static Result<Category> Create(string name)
+    public static Result<Category> Create(string? name)
     {
         var trimmed = name?.Trim();
 

@@ -26,7 +26,7 @@ public sealed class CategoryTests
     [InlineData("   ")]
     public void Create_WithBlankName_FailsWithNameRequired(string? name)
     {
-        var result = Category.Create(name!);
+        var result = Category.Create(name);
 
         result.IsFailure.ShouldBeTrue();
         result.Error.ShouldBe(CategoryErrors.NameRequired);
