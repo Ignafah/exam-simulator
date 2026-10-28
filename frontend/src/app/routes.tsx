@@ -1,4 +1,4 @@
 import type { RouteObject } from 'react-router'
-import App from './App.tsx'
+import SubjectsPage from '../features/subjects/SubjectsPage.tsx'
 
-export const routes: RouteObject[] = [{ path: '/', element: <App /> }]
+export const routes: RouteObject[] = [{ path: '/', element: <SubjectsPage /> }]
