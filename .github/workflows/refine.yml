@@ -2,18 +2,25 @@ name: Refine idea
 
 on:
   issues:
-    types: [labeled]
+    types: [opened, labeled]
 
 jobs:
   refine:
-    # Conditions de déclenchement :
-    # - l'interrupteur général AUTOMATION_ENABLED vaut "true" (variable du repo) ;
-    # - le label posé est "refine" ;
-    # - c'est TOI qui l'as posé.
+    # Conditions de déclenchement (toujours : interrupteur général actif ET action faite par TOI) :
+    # - une issue est créée avec le label "idea" (template Idée) -> raffinement automatique ;
+    # - OU tu poses le label "refine" -> nouveau raffinement après tes commentaires.
     if: |
       vars.AUTOMATION_ENABLED == 'true' &&
-      github.event.label.name == 'refine' &&
-      github.event.sender.login == github.repository_owner
+      github.event.sender.login == github.repository_owner &&
+      (
+        (github.event.action == 'opened' && contains(github.event.issue.labels.*.name, 'idea')) ||
+        (github.event.action == 'labeled' && github.event.label.name == 'refine')
+      )
+    # Un seul raffinement à la fois par issue (au niveau du job : un label sans rapport
+    # posé pendant le raffinement ne l'annule pas). Un nouveau raffinement attend son tour.
+    concurrency:
+      group: refine-${{ github.event.issue.number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -85,7 +92,8 @@ jobs:
 
             Enfin :
             - gh issue comment ${{ github.event.issue.number }} --body-file /tmp/spec.md
-            - gh issue edit ${{ github.event.issue.number }} --remove-label refine --add-label to-validate
+            - gh issue edit ${{ github.event.issue.number }} --add-label to-validate
+            - Si le label refine est présent : gh issue edit ${{ github.event.issue.number }} --remove-label refine
 
       # Détection des échecs silencieux : la spec doit avoir été postée (label to-validate).
       - name: Verify outcome
