@@ -73,6 +73,10 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Par défaut, l'action refuse de tourner si l'événement vient d'un bot.
+          # Ici, le label ready-for-agent est posé par l'application de l'agent (approve.yml).
+          # "*" est sûr dans ce cas : la condition "if" du job n'accepte déjà que TOI ou TON application.
+          allowed_bots: "*"
           claude_args: >-
             --max-turns 100
             --allowedTools "Read,Write,Edit,Glob,Grep,Bash(mkdir:*),Bash(dotnet:*),Bash(npm ci:*),Bash(npm install:*),Bash(npm create vite:*),Bash(npm run:*),Bash(npx @vite-pwa/assets-generator:*),Bash(npx pwa-assets-generator:*),Bash(npx tsc:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git switch:*),Bash(git add:*),Bash(git mv:*),Bash(git rm:*),Bash(git commit:*),Bash(git push:*),Bash(git check-ignore:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh pr create:*)"
