@@ -8,5 +8,7 @@ public interface ISubjectRepository
 
     Task<Subject?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 
+    Task<PagedResult<SubjectWithCategory>> ListPageAsync(int page, int pageSize, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<Subject>> ListAsync(CancellationToken cancellationToken);
 }
