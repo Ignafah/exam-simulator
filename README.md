@@ -19,8 +19,26 @@ Backend (SDK .NET 10 requis) :
 
 ```bash
 dotnet build backend
-dotnet test backend
+dotnet test backend   # Docker doit être démarré : les tests lancent un vrai PostgreSQL (Testcontainers)
 ```
+
+Base de données locale (Docker requis) :
+
+```bash
+docker compose up -d                      # lance PostgreSQL sur 127.0.0.1:5432
+dotnet tool restore                       # installe dotnet-ef (outil local)
+
+# Chaîne de connexion : jamais dans un fichier commité. L'API refuse de démarrer sans elle.
+# Les identifiants ci-dessous sont ceux (fictifs) de docker-compose.yml.
+dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Port=5432;Database=examsimulator;Username=examsimulator;Password=dev-only-password" --project backend/src/ExamSimulator.Api
+
+dotnet ef database update --project backend/src/ExamSimulator.Infrastructure --startup-project backend/src/ExamSimulator.Api
+
+# Créer une nouvelle migration (ne jamais modifier une migration déjà commitée)
+dotnet ef migrations add <Nom> --project backend/src/ExamSimulator.Infrastructure --startup-project backend/src/ExamSimulator.Api --output-dir Persistence/Migrations
+```
+
+Autre possibilité : la variable d'environnement `ConnectionStrings__Default`.
 
 Frontend (Node 22 requis), depuis la racine du dépôt :
 
