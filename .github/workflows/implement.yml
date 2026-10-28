@@ -14,11 +14,14 @@ jobs:
     # Conditions de déclenchement :
     # - l'interrupteur général AUTOMATION_ENABLED vaut "true" (variable du repo) ;
     # - le label posé est "ready-for-agent" ;
-    # - c'est TOI qui l'as posé.
+    # - posé par TOI, ou par l'application de l'agent (workflow "Approve spec" ou futur planificateur).
     if: |
       vars.AUTOMATION_ENABLED == 'true' &&
       github.event.label.name == 'ready-for-agent' &&
-      github.event.sender.login == github.repository_owner
+      (
+        github.event.sender.login == github.repository_owner ||
+        github.event.sender.login == vars.AGENT_BOT_LOGIN
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
