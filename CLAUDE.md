@@ -25,11 +25,15 @@ Priorités produit, dans l'ordre :
 
 ## 2. État actuel du repo
 
-- `backend/` : solution .NET (4 projets + 4 projets de tests), endpoint technique `GET /health`,
-  tests d'architecture. Aucune entité métier pour l'instant.
+- `backend/` : solution .NET (4 projets + 5 projets de tests), endpoint technique `GET /health`, tests d'architecture.
+  - Domain : `Result` / `Result<T>` / `Error` (`Common/`), entités `Category` et `Subject` (`Subjects/`).
+  - Application : interfaces `IUnitOfWork`, `ICategoryRepository`, `ISubjectRepository`. Aucun handler pour l'instant.
+  - Infrastructure : `ExamSimulatorDbContext` (EF Core + PostgreSQL), dépôts, migration initiale, `AddInfrastructure`.
+  - Api : aucun endpoint métier pour l'instant.
+- `docker-compose.yml` : PostgreSQL 18 pour le développement local.
 - `frontend/` : React + TypeScript + Vite en PWA, une page d'accueil. Aucun appel API pour l'instant.
 - `legacy/` : ancien prototype React + Vite en JavaScript (`legacy/src/data.js` contient des questions AZ-204).
-- `docs/adr/` : décisions d'architecture 0001 et 0002.
+- `docs/adr/` : décisions d'architecture 0001, 0002 et 0003.
 - `.github/workflows/` : CI (jobs `backend`, `legacy`, `frontend`) et workflows des agents.
 
 Règles pour le legacy :
@@ -38,8 +42,7 @@ Règles pour le legacy :
 - Les questions de `legacy/src/data.js` ne seront importées qu'après relecture humaine (voir section 8).
   L'examen AZ-204 a été retiré par Microsoft le 31/07/2026 : ces questions servent uniquement de données de test.
 
-La cible complète est décrite ci-dessous. `docker-compose.yml` n'existe pas encore :
-il sera créé par le premier ticket de persistance.
+La cible complète est décrite ci-dessous.
 
 ---
 
@@ -61,6 +64,7 @@ il sera créé par le premier ticket de persistance.
 /
 ├── CLAUDE.md
 ├── docker-compose.yml          # PostgreSQL local
+├── .config/dotnet-tools.json   # Outils .NET locaux (dotnet-ef)
 ├── docs/
 │   └── adr/                    # Décisions d'architecture (0001-xxx.md)
 ├── backend/
@@ -72,6 +76,7 @@ il sera créé par le premier ticket de persistance.
 │   └── tests/
 │       ├── ExamSimulator.Domain.Tests/
 │       ├── ExamSimulator.Application.Tests/
+│       ├── ExamSimulator.Infrastructure.Tests/   # Persistance, vraie base via Testcontainers
 │       ├── ExamSimulator.Api.IntegrationTests/
 │       └── ExamSimulator.ArchitectureTests/
 ├── frontend/                   # React + TypeScript + Vite (PWA)
@@ -104,7 +109,7 @@ il sera créé par le premier ticket de persistance.
 **Backend**
 - .NET 10 (LTS), C#, `Nullable` activé, `TreatWarningsAsErrors` activé
 - ASP.NET Core Minimal APIs
-- EF Core + Npgsql (PostgreSQL)
+- EF Core + Npgsql (PostgreSQL 18), noms en snake_case via `EFCore.NamingConventions`
 - FluentValidation pour la validation des entrées
 - ASP.NET Core Identity avec jetons bearer pour l'authentification (voir ADR à écrire)
 - OpenAPI intégré (`Microsoft.AspNetCore.OpenApi`)
@@ -192,7 +197,16 @@ Types de questions (v1) : `SingleChoice`, `MultipleChoice`, `TrueFalse`.
 
 ## 7. Données
 
-- PostgreSQL. Migrations EF Core dans `ExamSimulator.Infrastructure`.
+- PostgreSQL. Migrations EF Core dans `ExamSimulator.Infrastructure/Persistence/Migrations`,
+  appliquées à la main (`dotnet ef database update`), jamais automatiquement au démarrage.
+- Tables et colonnes en snake_case (convention automatique, ne pas forcer de noms en PascalCase).
+- Configuration des entités uniquement par `IEntityTypeConfiguration<T>` (aucun attribut dans le Domain).
+  Les longueurs maximales réutilisent les constantes du Domain (`NameMaxLength`...).
+- Clés étrangères en `DeleteBehavior.Restrict` (pas de suppression en cascade).
+- Les dépôts ne sauvegardent pas : le cas d'usage appelle `IUnitOfWork.SaveChangesAsync`.
+- L'API refuse de démarrer sans `ConnectionStrings:Default` (user-secrets ou variable d'environnement).
+- Les tests qui démarrent l'API (`WebApplicationFactory`) utilisent l'environnement `Testing`
+  (les user-secrets ne sont chargés qu'en `Development`).
 - **Ne modifie jamais une migration déjà commitée** : crée-en une nouvelle.
 - Toute migration qui supprime ou renomme une colonne ou une table est signalée en tête de la PR.
 - Les identifiants sont des `Guid`.
@@ -225,8 +239,13 @@ Types de questions (v1) : `SingleChoice`, `MultipleChoice`, `TrueFalse`.
 ## 10. Commandes
 
 ```bash
-# Base de données locale (à venir, premier ticket de persistance)
+# Base de données locale (développement)
 docker compose up -d
+dotnet tool restore
+dotnet ef database update --project backend/src/ExamSimulator.Infrastructure --startup-project backend/src/ExamSimulator.Api
+
+# Nouvelle migration (aucune base nécessaire pour la générer)
+dotnet ef migrations add <Nom> --project backend/src/ExamSimulator.Infrastructure --startup-project backend/src/ExamSimulator.Api --output-dir Persistence/Migrations
 
 # Backend
 dotnet build backend
@@ -241,6 +260,10 @@ npm run build
 ```
 
 Avant d'ouvrir une PR, **toutes** ces commandes doivent réussir pour les parties touchées.
+
+Les tests d'infrastructure utilisent Testcontainers : ils ont besoin du **service** Docker
+(disponible sur les runners GitHub Actions), pas de la commande `docker`. Lance simplement `dotnet test backend`.
+`docker compose` et `dotnet ef database update` sont des vérifications manuelles du mainteneur.
 
 ---
 
@@ -305,3 +328,23 @@ Closes #<numéro>
 ### Hors périmètre v1
 Paiement, fonctionnalités sociales, génération de questions par IA, mode hors ligne complet,
 répétition espacée (prévue en v2).
+
+---
+
+## 14. Système d'agents (fonctionnement automatique)
+
+Flux : idée (template, label `idea`) → analyste (spec, `to-validate`) → le mainteneur valide (`approved`)
+→ architecte (sous-tickets `sub-task` + `area:*` + `risk:*`) → planificateur (un sous-ticket à la fois, `ready-for-agent`)
+→ agent spécialisé (PR) → CI → relecteur IA (`ai-approved` / `ai-changes-requested`) → correction automatique
+(2 tentatives max) → merge (automatique pour `risk:low` si activé, sinon par le mainteneur).
+
+Conventions lues par des programmes (à respecter au caractère près, en début de ligne, dans un sous-ticket) :
+- `Parent : #<numéro de l'idée>`
+- `Dépend de : #<numéros séparés par des virgules>` ou `Dépend de : aucun`
+
+Spécialités et fichiers modifiables (vérifié automatiquement, toute PR hors périmètre est refusée) :
+- `area:backend` : `backend/`, `docs/`, `README.md`, `.gitignore`, `docker-compose.yml`, `.config/dotnet-tools.json`
+- `area:frontend` : `frontend/`, `docs/`, `README.md`, `.gitignore`
+- Jamais : `.github/`, `CLAUDE.md`, `legacy/`
+
+Un sous-ticket ne touche qu'un seul domaine. Une évolution qui touche backend et frontend est découpée en deux sous-tickets.
