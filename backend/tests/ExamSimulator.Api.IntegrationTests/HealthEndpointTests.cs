@@ -11,7 +11,10 @@ public sealed class HealthEndpointTests
     {
         // Chaîne factice : /health n'interroge pas la base.
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            builder.UseSetting("ConnectionStrings:Default", "Host=localhost;Database=fictive;Username=fictif;Password=fictif"));
+        {
+            builder.UseEnvironment("Testing");
+            builder.UseSetting("ConnectionStrings:Default", "Host=localhost;Database=fictive;Username=fictif;Password=fictif");
+        });
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/health");
@@ -23,7 +26,10 @@ public sealed class HealthEndpointTests
     public void Demarrage_sans_chaine_de_connexion_echoue_en_nommant_ConnectionStrings_Default()
     {
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            builder.UseSetting("ConnectionStrings:Default", string.Empty));
+        {
+            builder.UseEnvironment("Testing");
+            builder.UseSetting("ConnectionStrings:Default", string.Empty);
+        });
 
         var exception = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
 
