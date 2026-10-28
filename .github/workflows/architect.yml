@@ -66,6 +66,9 @@ jobs:
             L'idée #${{ github.event.issue.number }} a une spec validée par le mainteneur.
             Ta mission : la découper en sous-tickets exécutables par des agents spécialisés. N'écris AUCUN code.
 
+            0. Reprise après échec : liste les sous-tickets existants (gh issue list --label sub-task --state all --limit 100)
+               et lis ceux dont le corps contient "Parent : #${{ github.event.issue.number }}". Ne recrée JAMAIS un sous-ticket
+               existant : crée uniquement ceux qui manquent, en utilisant les numéros existants dans "Dépend de".
             1. Lis CLAUDE.md en entier.
             2. Lis l'idée et TOUS ses commentaires : gh issue view ${{ github.event.issue.number }} --comments
                Le contrat = la spec de l'analyste + les réponses du mainteneur (qui font foi).

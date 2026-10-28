@@ -6,10 +6,6 @@ on:
   pull_request:
     types: [labeled]
 
-concurrency:
-  group: fix-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
-
 jobs:
   fix:
     if: |
@@ -21,6 +17,10 @@ jobs:
         github.event.sender.login == github.repository_owner ||
         github.event.sender.login == vars.AGENT_BOT_LOGIN
       )
+    # Au niveau du job : un label sans rapport ne peut pas annuler une correction en attente.
+    concurrency:
+      group: fix-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:

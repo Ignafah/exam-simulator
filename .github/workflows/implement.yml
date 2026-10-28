@@ -4,11 +4,6 @@ on:
   issues:
     types: [labeled]
 
-# Une seule implémentation à la fois (WIP = 1).
-concurrency:
-  group: implement-agent
-  cancel-in-progress: false
-
 jobs:
   implement:
     # Label "ready-for-agent" posé par TOI ou par l'application de l'agent (planificateur).
@@ -19,6 +14,11 @@ jobs:
         github.event.sender.login == github.repository_owner ||
         github.event.sender.login == vars.AGENT_BOT_LOGIN
       )
+    # Une seule implémentation à la fois (WIP = 1). Au niveau du job : un label sans rapport
+    # (qui produit une exécution ignorée) ne peut pas annuler une implémentation en attente.
+    concurrency:
+      group: implement-agent
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:

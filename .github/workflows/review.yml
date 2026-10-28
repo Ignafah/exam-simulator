@@ -141,19 +141,22 @@ jobs:
             Écris ta relecture dans /tmp/review.md : verdict, problèmes bloquants (fichier, ligne, correction attendue),
             suggestions non bloquantes. Puis :
             gh pr comment ${{ needs.route.outputs.pr }} --body-file /tmp/review.md
-            Puis UN SEUL de ces deux labels :
-            - aucun problème bloquant : gh pr edit ${{ needs.route.outputs.pr }} --add-label ai-approved
-            - au moins un problème bloquant : gh pr edit ${{ needs.route.outputs.pr }} --add-label ai-changes-requested
+            Enfin, écris ton verdict dans le fichier /tmp/verdict.txt, avec UN SEUL mot :
+            - approved : aucun problème bloquant
+            - changes : au moins un problème bloquant
+            Ne pose aucun label toi-même.
 
-      - name: Verify verdict
+      # Le label est posé ici avec le jeton de l'application (et non par Claude, qui agit sous "claude[bot]"),
+      # pour que "ai-changes-requested" déclenche bien l'agent de correction.
+      - name: Apply verdict
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          LABELS=$(gh pr view "$PR" --json labels --jq '[.labels[].name] | join(",")')
-          if echo ",$LABELS," | grep -qE ",(ai-approved|ai-changes-requested),"; then
-            echo "OK : verdict posé."
-            exit 0
-          fi
+          VERDICT=$(tr -d '[:space:]' < /tmp/verdict.txt 2>/dev/null || true)
+          case "$VERDICT" in
+            approved) gh pr edit "$PR" --add-label ai-approved; echo "Verdict : approuvée."; exit 0 ;;
+            changes)  gh pr edit "$PR" --add-label ai-changes-requested; echo "Verdict : corrections demandées."; exit 0 ;;
+          esac
           gh pr edit "$PR" --add-label needs-human
           gh pr comment "$PR" --body "Le relecteur IA n'a pas rendu de verdict. Intervention nécessaire."
           exit 1
