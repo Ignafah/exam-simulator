@@ -1,0 +1,134 @@
+name: Architect
+
+# Ta validation (label "approved") lance l'architecte : il découpe l'idée en sous-tickets.
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  architect:
+    if: |
+      vars.AUTOMATION_ENABLED == 'true' &&
+      github.event.label.name == 'approved' &&
+      github.event.sender.login == github.repository_owner
+    concurrency:
+      group: architect-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+      actions: write      # pour lancer le planificateur (dispatch.yml)
+      id-token: write
+    env:
+      ISSUE: ${{ github.event.issue.number }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Generate agent token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Check that a spec is waiting for validation
+        id: precheck
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name] | join(",")')
+          if echo ",$LABELS," | grep -q ",to-validate,"; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            gh issue edit "$ISSUE" --remove-label approved || true
+            gh issue comment "$ISSUE" --body "Validation ignorée : aucune spec en attente (label to-validate absent)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.precheck.outputs.ok == 'true'
+        uses: actions/checkout@v4
+
+      - name: Plan with Claude
+        if: steps.precheck.outputs.ok == 'true'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: >-
+            --max-turns 30
+            --allowedTools "Read,Glob,Grep,Write,Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh issue create:*),Bash(gh issue comment:*)"
+          prompt: |
+            Tu es l'architecte du projet décrit dans CLAUDE.md.
+            L'idée #${{ github.event.issue.number }} a une spec validée par le mainteneur.
+            Ta mission : la découper en sous-tickets exécutables par des agents spécialisés. N'écris AUCUN code.
+
+            1. Lis CLAUDE.md en entier.
+            2. Lis l'idée et TOUS ses commentaires : gh issue view ${{ github.event.issue.number }} --comments
+               Le contrat = la spec de l'analyste + les réponses du mainteneur (qui font foi).
+            3. Lis le code concerné.
+
+            Règles de découpage :
+            - Chaque sous-ticket touche UN SEUL domaine : backend (dossier backend/) OU frontend (dossier frontend/).
+              docs/, README.md et .gitignore sont modifiables par les deux.
+            - Chaque sous-ticket fait moins de 400 lignes modifiées (hors fichiers générés) et produit une PR relisable seule.
+            - Un seul sous-ticket si l'idée est petite et ne touche qu'un domaine.
+            - Ordre : crée les sous-tickets dans l'ordre d'exécution (les dépendances d'abord).
+
+            Niveau de risque de chaque sous-ticket :
+            - risk:high si le sous-ticket touche : authentification, sécurité, données des utilisateurs,
+              schéma de base de données ou migration, suppression de données, nouvelle dépendance, configuration.
+            - risk:low sinon (écran sans donnée sensible, texte, style, tests, documentation, lecture simple).
+            En cas de doute : risk:high.
+
+            Pour chaque sous-ticket, écris son corps dans /tmp/sub-<n>.md avec EXACTEMENT ce format :
+
+            Parent : #${{ github.event.issue.number }}
+            Dépend de : #<numéros séparés par des virgules, ou "aucun">
+
+            ## Contexte
+            (2-3 lignes : pourquoi ce sous-ticket existe dans l'idée)
+            ## Ce qu'il faut faire
+            ## Critères d'acceptation
+            (repris de la spec, Given/When/Then ; indique "test automatisé" ou "vérification manuelle en review")
+            ## Décisions du mainteneur à respecter
+            (recopie TOUTES les réponses du mainteneur qui concernent ce sous-ticket)
+            ## Hors périmètre
+            ## Dépendances autorisées
+            (liste fermée ; "aucune nouvelle dépendance" si rien)
+
+            Les lignes "Parent :" et "Dépend de :" sont lues par un programme : respecte-les au caractère près,
+            en tout début de ligne.
+
+            Crée chaque sous-ticket :
+            gh issue create --title "<titre court>" --body-file /tmp/sub-<n>.md --label sub-task --label area:<backend|frontend> --label risk:<low|high>
+            N'ajoute JAMAIS le label ready-for-agent : le planificateur s'en charge.
+
+            Enfin, poste sur l'idée un commentaire récapitulatif (tableau : numéro, titre, domaine, risque, dépendances) :
+            gh issue comment ${{ github.event.issue.number }} --body-file /tmp/plan.md
+
+      - name: Verify plan and start the dispatcher
+        if: always() && steps.precheck.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN_FOR_DISPATCH: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Chaque sous-ticket contient une ligne "Parent : #<numéro de l'idée>".
+          COUNT=$(gh issue list --state all --label sub-task --limit 300 --json body --jq '.[].body' \
+            | grep -cE "^Parent ?: ?#${ISSUE}([^0-9]|$)" || true)
+
+          if [ "$COUNT" -gt 0 ]; then
+            gh issue edit "$ISSUE" --remove-label to-validate --remove-label approved --add-label planned
+            # Le lancement d'un workflow (workflow_dispatch) est autorisé avec le jeton par défaut.
+            GH_TOKEN="$GITHUB_TOKEN_FOR_DISPATCH" gh workflow run dispatch.yml
+            echo "OK : $COUNT sous-ticket(s) créé(s), planificateur lancé."
+            exit 0
+          fi
+
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          gh issue edit "$ISSUE" --remove-label approved --add-label needs-human || true
+          gh issue comment "$ISSUE" --body "L'architecte n'a créé aucun sous-ticket. Intervention nécessaire. Journal : $RUN_URL"
+          exit 1

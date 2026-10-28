@@ -4,17 +4,14 @@ on:
   issues:
     types: [labeled]
 
-# Une seule implémentation à la fois (WIP = 1). Les suivantes attendent leur tour.
+# Une seule implémentation à la fois (WIP = 1).
 concurrency:
   group: implement-agent
   cancel-in-progress: false
 
 jobs:
   implement:
-    # Conditions de déclenchement :
-    # - l'interrupteur général AUTOMATION_ENABLED vaut "true" (variable du repo) ;
-    # - le label posé est "ready-for-agent" ;
-    # - posé par TOI, ou par l'application de l'agent (workflow "Approve spec" ou futur planificateur).
+    # Label "ready-for-agent" posé par TOI ou par l'application de l'agent (planificateur).
     if: |
       vars.AUTOMATION_ENABLED == 'true' &&
       github.event.label.name == 'ready-for-agent' &&
@@ -33,10 +30,6 @@ jobs:
       ISSUE: ${{ github.event.issue.number }}
       GH_REPO: ${{ github.repository }}
     steps:
-      # Jeton de l'application GitHub de l'agent.
-      # Contrairement au jeton par défaut, ses actions (PR, push, labels) déclenchent les autres
-      # workflows : la CI démarre donc toute seule sur la PR de l'agent.
-      # L'application n'a pas la permission "Workflows" : elle ne peut pas modifier .github/workflows/.
       - name: Generate agent token
         id: app-token
         uses: actions/create-github-app-token@v2
@@ -50,12 +43,21 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
+      # Spécialisation : le label area:* choisit les commandes autorisées et les dossiers modifiables.
+      - name: Configure specialized agent
+        id: config
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: bash .github/scripts/agent-config.sh "$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name] | join(",")')"
+
       - name: Setup .NET 10
+        if: steps.config.outputs.area != 'frontend'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
       - name: Setup Node 22
+        if: steps.config.outputs.area != 'backend'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -66,99 +68,131 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Implement with Claude
-        # On ne s'arrête pas ici en cas d'erreur : c'est l'étape "Verify outcome" qui juge le résultat.
-        continue-on-error: true
+        continue-on-error: true   # c'est le job "guard" qui juge le résultat
         uses: anthropics/claude-code-action@v1
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Par défaut, l'action refuse de tourner si l'événement vient d'un bot.
-          # Ici, le label ready-for-agent est posé par l'application de l'agent (approve.yml).
-          # "*" est sûr dans ce cas : la condition "if" du job n'accepte déjà que TOI ou TON application.
-          allowed_bots: "*"
+          allowed_bots: "*"   # le label peut être posé par l'application ; le "if" du job filtre déjà
           claude_args: >-
             --max-turns 100
-            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(mkdir:*),Bash(dotnet:*),Bash(npm ci:*),Bash(npm install:*),Bash(npm create vite:*),Bash(npm run:*),Bash(npx @vite-pwa/assets-generator:*),Bash(npx pwa-assets-generator:*),Bash(npx tsc:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git switch:*),Bash(git add:*),Bash(git mv:*),Bash(git rm:*),Bash(git commit:*),Bash(git push:*),Bash(git check-ignore:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh pr create:*)"
+            --allowedTools "${{ steps.config.outputs.tools }}"
           prompt: |
-            Tu es développeur sur le projet décrit dans CLAUDE.md.
+            Tu es le développeur ${{ steps.config.outputs.area }} du projet décrit dans CLAUDE.md.
             Ta mission : implémenter l'issue #${{ github.event.issue.number }}.
 
             ## Préparation
             1. Lis CLAUDE.md en entier et respecte-le.
-            2. Lis l'issue et TOUS ses commentaires :
-               gh issue view ${{ github.event.issue.number }} --comments
-               Le contrat = la spec de l'analyste + les réponses du mainteneur.
-               En cas de contradiction, les réponses du mainteneur font foi.
+            2. Lis l'issue et TOUS ses commentaires : gh issue view ${{ github.event.issue.number }} --comments
+               Si elle contient une ligne "Parent : #N", lis aussi l'issue N et ses commentaires.
+               Les réponses du mainteneur font foi.
             3. Crée ta branche : git switch -c ai/issue-${{ github.event.issue.number }}
+
+            ## Périmètre de ta spécialité
+            Tu ne peux modifier que les fichiers correspondant à cette expression : ${{ steps.config.outputs.paths }}
+            Un contrôle automatique refusera ta PR si tu modifies autre chose. Si le ticket l'exige, arrête-toi (voir plus bas).
 
             ## Réalisation
             4. Écris d'abord les tests dérivés des critères d'acceptation, puis le code.
-            5. Reste strictement dans le périmètre. Aucune dépendance hors de celles autorisées.
-            6. N'utilise jamais "cd dossier && commande". Utilise des chemins :
-               dotnet build backend / dotnet test backend
-               npm ci --prefix <dossier> / npm run build --prefix <dossier>
-               npm run lint --prefix <dossier> / npm run test --prefix <dossier>
-               (<dossier> = legacy ou frontend selon ce que le ticket touche)
-               Pour créer un projet ou ajouter un paquet : npm create vite / npm install --prefix <dossier>,
-               uniquement avec les paquets autorisés par le ticket.
+            5. Reste strictement dans le périmètre. Aucune dépendance hors de celles autorisées par le ticket.
+            6. N'utilise jamais "cd dossier && commande" : dotnet build backend, dotnet test backend,
+               npm ci --prefix frontend, npm run lint --prefix frontend, npm run test --prefix frontend, npm run build --prefix frontend.
             7. Toutes les commandes concernées doivent réussir avant d'ouvrir la PR.
 
             ## Nettoyage avant livraison (obligatoire)
-            8. Supprime avec git rm (ne te contente pas de les vider) :
-               - les fichiers générés par les modèles de projet et inutilisés (Class1.cs, UnitTest1.cs, etc.) ;
-               - tout fichier temporaire créé pour une vérification (par exemple une violation volontaire de règle).
-            9. Aucun fichier vide et aucun test qui ne vérifie rien (méthode de test sans assertion) dans le diff.
-            10. Relis ton diff (git diff main) critère par critère, puis vérifie git status.
+            8. Supprime avec git rm les fichiers de modèle inutilisés (Class1.cs, UnitTest1.cs...) et tout fichier temporaire.
+            9. Aucun fichier vide, aucun test sans assertion.
+            10. Relis ton diff (git diff main) critère par critère, puis git status.
 
             ## Livraison
             11. Commits clairs, puis : git push -u origin ai/issue-${{ github.event.issue.number }}
             12. Écris la description de PR dans /tmp/pr.md avec le modèle de CLAUDE.md section 11.
-                Pour CHAQUE critère d'acceptation : le test qui le couvre, ou la vérification
-                manuelle que le mainteneur doit faire (et comment la faire, en termes simples).
-                Dans "Dépendances ajoutées" : déclare TOUT écart à la liste autorisée par le ticket
-                (même une dépendance obligatoire d'un paquet autorisé), avec sa raison.
-            13. gh pr create --draft --base main --head ai/issue-${{ github.event.issue.number }} --title "<titre clair>" --body-file /tmp/pr.md
+                Pour CHAQUE critère d'acceptation : le test qui le couvre, ou la vérification manuelle à faire.
+                Dans "Dépendances ajoutées" : déclare TOUT écart à la liste autorisée, avec sa raison.
+            13. gh pr create --base main --head ai/issue-${{ github.event.issue.number }} --title "<titre clair>" --body-file /tmp/pr.md
             14. gh issue comment ${{ github.event.issue.number }} --body "PR ouverte : <lien de la PR>"
             15. gh issue edit ${{ github.event.issue.number }} --remove-label ready-for-agent
 
             ## Quand t'arrêter SANS ouvrir de PR
-            - Contradiction entre le ticket, CLAUDE.md et le code.
-            - Information manquante pour un choix métier ou technique.
-            - Besoin d'une dépendance non autorisée.
-            - Une commande échoue encore après 3 tentatives de correction.
-            - Une commande dont tu as besoin t'est refusée (permission).
-            Dans ce cas : explique précisément le blocage en commentaire sur l'issue
-            (ce qui est fait, ce qui bloque, la question), puis
+            Contradiction entre le ticket, CLAUDE.md et le code ; information manquante pour un choix métier ou technique ;
+            dépendance non autorisée nécessaire ; fichier hors de ta spécialité à modifier ; commande refusée ;
+            commande qui échoue encore après 3 tentatives.
+            Dans ce cas : explique le blocage en commentaire sur l'issue (fait, bloquant, question), puis
             gh issue edit ${{ github.event.issue.number }} --remove-label ready-for-agent --add-label needs-clarification
 
             ## Interdits absolus
-            Pousser sur main, modifier CLAUDE.md ou .github/, désactiver ou affaiblir un test,
-            ajouter NoWarn ou #pragma warning disable sans justification écrite dans la PR.
+            Pousser sur main, modifier CLAUDE.md, .github/ ou legacy/, désactiver ou affaiblir un test,
+            ajouter NoWarn, #pragma warning disable, @ts-ignore ou eslint-disable.
 
-      # Détection des échecs silencieux : l'agent doit avoir produit une PR
-      # OU posé needs-clarification. Sinon, on alerte le mainteneur.
-      - name: Verify outcome
-        if: always()
+  # Contrôle sur une machine séparée : l'agent ne peut pas modifier ce qui vérifie son travail.
+  guard:
+    needs: implement
+    if: always() && needs.implement.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      ISSUE: ${{ github.event.issue.number }}
+      GH_REPO: ${{ github.repository }}
+      BRANCH: ai/issue-${{ github.event.issue.number }}
+    steps:
+      - name: Generate agent token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Checkout main (trusted scripts)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Configure specialized agent
+        id: config
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: bash .github/scripts/agent-config.sh "$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name] | join(",")')"
+
+      - name: Verify outcome and scope
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ALLOWED_PATHS: ${{ steps.config.outputs.paths }}
+          AREA: ${{ steps.config.outputs.area }}
         run: |
-          PR_URL=$(gh pr list --head "ai/issue-$ISSUE" --state all --json url --jq '.[0].url // ""')
-          LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name] | join(",")')
-
-          if [ -n "$PR_URL" ]; then
-            echo "OK : PR trouvée : $PR_URL"
-            exit 0
-          fi
-
-          if echo ",$LABELS," | grep -q ",needs-clarification,"; then
-            echo "OK : l'agent a demandé une clarification sur l'issue."
-            exit 0
-          fi
-
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          gh issue edit "$ISSUE" --add-label needs-human
-          gh issue edit "$ISSUE" --remove-label ready-for-agent || true
-          gh issue comment "$ISSUE" --body "L'agent d'implémentation s'est arrêté sans ouvrir de PR ni poser de question. Intervention nécessaire. Journal : $RUN_URL"
-          echo "ÉCHEC : ni PR, ni demande de clarification."
-          exit 1
+          LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name] | join(",")')
+          PR=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // ""')
+
+          if [ -z "$PR" ]; then
+            if echo ",$LABELS," | grep -q ",needs-clarification,"; then
+              echo "OK : l'agent a posé une question sur l'issue."
+              exit 0
+            fi
+            gh issue edit "$ISSUE" --add-label needs-human
+            gh issue edit "$ISSUE" --remove-label ready-for-agent || true
+            gh issue comment "$ISSUE" --body "L'agent d'implémentation s'est arrêté sans ouvrir de PR ni poser de question. Journal : $RUN_URL"
+            echo "ÉCHEC : ni PR, ni question."
+            exit 1
+          fi
+
+          if ! BAD=$(bash .github/scripts/check-paths.sh "$BRANCH" "$ALLOWED_PATHS"); then
+            gh pr ready "$PR" --undo || true
+            gh pr edit "$PR" --add-label needs-human
+            gh issue edit "$ISSUE" --add-label needs-human
+            FENCE=$(printf '\140\140\140')
+            { echo "Contrôle de périmètre (agent $AREA) : fichiers modifiés hors de la spécialité. PR repassée en brouillon."; echo; echo "$FENCE"; echo "$BAD"; echo "$FENCE"; } > /tmp/scope.md
+            gh pr comment "$PR" --body-file /tmp/scope.md
+            echo "ÉCHEC : fichiers hors périmètre."
+            exit 1
+          fi
+
+          # Les labels de domaine et de risque passent de l'issue à la PR (utilisés pour la review et le merge).
+          for label in $(echo "$LABELS" | tr ',' '\n' | grep -E '^(area|risk):' || true); do
+            gh pr edit "$PR" --add-label "$label"
+          done
+          echo "OK : PR #$PR conforme au périmètre."

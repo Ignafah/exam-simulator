@@ -1,0 +1,195 @@
+name: Fix PR
+
+# Agent de correction : déclenché quand le relecteur IA demande des changements (ai-changes-requested)
+# ou quand la CI échoue (ci-failed). Deux tentatives maximum, ensuite needs-human.
+on:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: fix-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    if: |
+      vars.AUTOMATION_ENABLED == 'true' &&
+      (github.event.label.name == 'ai-changes-requested' || github.event.label.name == 'ci-failed') &&
+      startsWith(github.event.pull_request.head.ref, 'ai/issue-') &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        github.event.sender.login == github.repository_owner ||
+        github.event.sender.login == vars.AGENT_BOT_LOGIN
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      actions: read        # lire le journal de la CI en échec
+      id-token: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      BRANCH: ${{ github.event.pull_request.head.ref }}
+      TRIGGER: ${{ github.event.label.name }}
+    outputs:
+      proceed: ${{ steps.attempt.outputs.proceed }}
+    steps:
+      - name: Generate agent token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Count attempts
+        id: attempt
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          LABELS=$(gh pr view "$PR" --json labels --jq '[.labels[].name] | join(",")')
+          gh pr edit "$PR" --remove-label "$TRIGGER" || true
+
+          if echo ",$LABELS," | grep -q ",ai-attempt-2,"; then
+            ISSUE="${BRANCH#ai/issue-}"
+            gh pr edit "$PR" --add-label needs-human
+            gh issue edit "$ISSUE" --add-label needs-human || true
+            gh pr comment "$PR" --body "Deux tentatives de correction automatique sans succès ($TRIGGER). Intervention nécessaire."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if echo ",$LABELS," | grep -q ",ai-attempt-1,"; then
+            gh pr edit "$PR" --add-label ai-attempt-2
+          else
+            gh pr edit "$PR" --add-label ai-attempt-1
+          fi
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout PR branch
+        if: steps.attempt.outputs.proceed == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Configure specialized agent
+        if: steps.attempt.outputs.proceed == 'true'
+        id: config
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          # Script lu depuis main : la branche de l'agent ne peut pas modifier sa propre configuration.
+          git show origin/main:.github/scripts/agent-config.sh > "$RUNNER_TEMP/agent-config.sh"
+          bash "$RUNNER_TEMP/agent-config.sh" "$(gh pr view "$PR" --json labels --jq '[.labels[].name] | join(",")')"
+
+      - name: Fetch failing CI log
+        if: steps.attempt.outputs.proceed == 'true' && env.TRIGGER == 'ci-failed'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          RUN_ID=$(gh run list --workflow ci.yml --commit "$HEAD_SHA" --limit 1 --json databaseId --jq '.[0].databaseId // ""')
+          if [ -n "$RUN_ID" ]; then
+            gh run view "$RUN_ID" --log-failed | tail -c 30000 > /tmp/ci-failure.log || true
+          fi
+          [ -s /tmp/ci-failure.log ] || echo "Journal de la CI introuvable." > /tmp/ci-failure.log
+
+      - name: Setup .NET 10
+        if: steps.attempt.outputs.proceed == 'true' && steps.config.outputs.area != 'frontend'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node 22
+        if: steps.attempt.outputs.proceed == 'true' && steps.config.outputs.area != 'backend'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Configure git identity
+        if: steps.attempt.outputs.proceed == 'true'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fix with Claude
+        if: steps.attempt.outputs.proceed == 'true'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "*"
+          claude_args: >-
+            --max-turns 60
+            --allowedTools "${{ steps.config.outputs.tools }}"
+          prompt: |
+            Tu es le développeur ${{ steps.config.outputs.area }} du projet décrit dans CLAUDE.md.
+            Tu corriges la PR #${{ github.event.pull_request.number }} (branche ${{ github.event.pull_request.head.ref }}, déjà extraite).
+            Raison : ${{ github.event.label.name }}.
+
+            1. Lis CLAUDE.md.
+            2. gh pr view ${{ github.event.pull_request.number }} --comments (description, relecture IA, remarques du mainteneur)
+               et l'issue liée avec ses commentaires.
+            3. Si la raison est ci-failed : lis /tmp/ci-failure.log (journal de la CI en échec).
+               Si la raison est ai-changes-requested : corrige UNIQUEMENT les problèmes bloquants de la dernière relecture.
+            4. Corrige, puis lance les commandes de vérification concernées (dotnet test backend, npm run lint/test/build --prefix frontend).
+            5. Tu ne peux modifier que les fichiers correspondant à : ${{ steps.config.outputs.paths }}
+            6. Commit, puis git push sur la MÊME branche. N'ouvre pas de nouvelle PR.
+            7. gh pr comment ${{ github.event.pull_request.number }} --body "<résumé de ce qui a été corrigé, et ce qui ne l'a pas été>"
+
+            Interdits : modifier CLAUDE.md, .github/ ou legacy/, désactiver ou affaiblir un test, modifier une migration existante.
+            Si la correction demandée est impossible sans sortir de ces règles, ne pousse rien et explique pourquoi en commentaire.
+
+  # Contrôle de périmètre sur une machine séparée.
+  guard:
+    needs: fix
+    if: always() && needs.fix.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      BRANCH: ${{ github.event.pull_request.head.ref }}
+    steps:
+      - name: Generate agent token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Checkout main (trusted scripts)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Configure specialized agent
+        id: config
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: bash .github/scripts/agent-config.sh "$(gh pr view "$PR" --json labels --jq '[.labels[].name] | join(",")')"
+
+      - name: Check scope
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ALLOWED_PATHS: ${{ steps.config.outputs.paths }}
+        run: |
+          if ! BAD=$(bash .github/scripts/check-paths.sh "$BRANCH" "$ALLOWED_PATHS"); then
+            gh pr ready "$PR" --undo || true
+            gh pr edit "$PR" --add-label needs-human
+            FENCE=$(printf '\140\140\140')
+            { echo "Contrôle de périmètre : fichiers modifiés hors de la spécialité après correction. PR repassée en brouillon."; echo; echo "$FENCE"; echo "$BAD"; echo "$FENCE"; } > /tmp/scope.md
+            gh pr comment "$PR" --body-file /tmp/scope.md
+            exit 1
+          fi
+          echo "OK : périmètre respecté."

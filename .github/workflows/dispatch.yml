@@ -1,0 +1,41 @@
+name: Dispatch
+
+# Planificateur sans IA : lance le prochain sous-ticket prêt et ferme les idées terminées.
+on:
+  issues:
+    types: [closed]        # un sous-ticket se ferme quand sa PR est mergée
+  workflow_dispatch:       # lancé par l'architecte, ou à la main (bouton "Run workflow")
+  schedule:
+    - cron: '17 * * * *'   # filet de sécurité : toutes les heures
+
+concurrency:
+  group: dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: vars.AUTOMATION_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # Jeton de l'application : le label ready-for-agent qu'il pose déclenche "Implement ticket".
+      - name: Generate agent token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Dispatch
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: bash .github/scripts/dispatch.sh

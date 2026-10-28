@@ -1,0 +1,206 @@
+name: Review
+
+# Après chaque exécution de la CI sur une PR d'agent :
+# - CI rouge -> label ci-failed (déclenche l'agent de correction) ;
+# - CI verte -> relecteur IA, puis merge (automatique si risque faible et activé) ou validation humaine.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+jobs:
+  route:
+    if: |
+      vars.AUTOMATION_ENABLED == 'true' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      startsWith(github.event.workflow_run.head_branch, 'ai/issue-') &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      pr: ${{ steps.pr.outputs.pr }}
+      skip: ${{ steps.pr.outputs.skip }}
+    env:
+      GH_REPO: ${{ github.repository }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Generate agent token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Find PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          DATA=$(gh pr list --head "$BRANCH" --state open --json number,headRefOid,labels,isDraft --jq '.[0] // empty')
+          if [ -z "$DATA" ]; then echo "skip=true" >> "$GITHUB_OUTPUT"; echo "Pas de PR ouverte."; exit 0; fi
+          PR=$(jq -r '.number' <<<"$DATA")
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"
+          # On ignore une CI sur un ancien commit, une PR en brouillon ou une PR qui attend un humain.
+          if [ "$(jq -r '.headRefOid' <<<"$DATA")" != "$HEAD_SHA" ] \
+            || [ "$(jq -r '.isDraft' <<<"$DATA")" = "true" ] \
+            || jq -e '[.labels[].name] | index("needs-human")' <<<"$DATA" >/dev/null; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"; echo "PR ignorée (ancien commit, brouillon ou needs-human)."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  ci-failed:
+    needs: route
+    if: needs.route.outputs.skip == 'false' && github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Generate agent token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+      - name: Ask the fix agent
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh pr edit "${{ needs.route.outputs.pr }}" --add-label ci-failed
+
+  review:
+    needs: route
+    if: needs.route.outputs.skip == 'false' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ needs.route.outputs.pr }}
+    steps:
+      - name: Generate agent token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Checkout PR code (read only)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Reset previous verdict
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh pr edit "$PR" --remove-label ai-approved --remove-label ai-changes-requested || true
+
+      - name: Review with Claude
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "*"
+          claude_args: >-
+            --max-turns 30
+            --allowedTools "Read,Glob,Grep,Write,Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*),Bash(gh pr comment:*),Bash(gh pr edit:*)"
+          prompt: |
+            Tu es le relecteur de code du projet décrit dans CLAUDE.md. Tu ne modifies AUCUN fichier.
+            PR à relire : #${{ needs.route.outputs.pr }} (la CI est verte).
+
+            1. Lis CLAUDE.md.
+            2. gh pr view ${{ needs.route.outputs.pr }} --comments ; puis l'issue liée ("Closes #N") avec ses commentaires,
+               et son parent si elle contient "Parent : #N". Le contrat = critères d'acceptation + décisions du mainteneur.
+            3. gh pr diff ${{ needs.route.outputs.pr }}
+
+            Vérifie, dans cet ordre :
+            - Chaque critère d'acceptation est couvert (test automatisé réel, ou vérification manuelle décrite).
+            - Bugs, cas limites oubliés, erreurs de logique.
+            - Règles de CLAUDE.md : architecture et dépendances entre couches, conventions, sécurité, données, interdits.
+            - Tests : chaque test vérifie vraiment quelque chose ; aucun test affaibli ou supprimé.
+            - Aucune dépendance non autorisée ou non déclarée ; aucun fichier vide ou inutile.
+            - Migration de base de données : uniquement si prévue, jamais de modification d'une migration existante,
+              suppression ou renommage signalé.
+
+            Ne demande des changements QUE pour un vrai problème (bug, critère non couvert, règle violée, risque de sécurité
+            ou de données). Les préférences de style ne justifient pas de changement : mentionne-les comme suggestions.
+
+            Écris ta relecture dans /tmp/review.md : verdict, problèmes bloquants (fichier, ligne, correction attendue),
+            suggestions non bloquantes. Puis :
+            gh pr comment ${{ needs.route.outputs.pr }} --body-file /tmp/review.md
+            Puis UN SEUL de ces deux labels :
+            - aucun problème bloquant : gh pr edit ${{ needs.route.outputs.pr }} --add-label ai-approved
+            - au moins un problème bloquant : gh pr edit ${{ needs.route.outputs.pr }} --add-label ai-changes-requested
+
+      - name: Verify verdict
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          LABELS=$(gh pr view "$PR" --json labels --jq '[.labels[].name] | join(",")')
+          if echo ",$LABELS," | grep -qE ",(ai-approved|ai-changes-requested),"; then
+            echo "OK : verdict posé."
+            exit 0
+          fi
+          gh pr edit "$PR" --add-label needs-human
+          gh pr comment "$PR" --body "Le relecteur IA n'a pas rendu de verdict. Intervention nécessaire."
+          exit 1
+
+  merge:
+    needs: [route, review]
+    if: needs.review.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write   # l'approbation automatique est faite avec le jeton par défaut (github-actions)
+    env:
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ needs.route.outputs.pr }}
+    steps:
+      - name: Generate agent token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Merge or hand over to the maintainer
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          DEFAULT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTO_MERGE: ${{ vars.AUTO_MERGE_LOW_RISK }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          LABELS=$(gh pr view "$PR" --json labels --jq '[.labels[].name] | join(",")')
+          if ! echo ",$LABELS," | grep -q ",ai-approved,"; then
+            echo "Pas approuvée par le relecteur IA : l'agent de correction prend le relais."
+            exit 0
+          fi
+
+          if [ "$AUTO_MERGE" = "true" ] && echo ",$LABELS," | grep -q ",risk:low,"; then
+            # Approbation par github-actions (pas l'auteur de la PR), puis merge avec le jeton de l'application
+            # pour que la fermeture de l'issue relance le planificateur.
+            if GH_TOKEN="$DEFAULT_TOKEN" gh pr review "$PR" --approve --body "Approbation automatique : risque faible, CI verte, relecteur IA OK." \
+               && gh pr merge "$PR" --squash --delete-branch; then
+              echo "PR #$PR mergée automatiquement."
+              exit 0
+            fi
+            echo "Merge automatique impossible : validation humaine demandée."
+          fi
+
+          gh pr edit "$PR" --add-label ready-to-merge
+          gh pr edit "$PR" --add-reviewer "$OWNER" || true
+          gh pr comment "$PR" --body "CI verte et relecteur IA OK. Prêt pour ta validation : relis, approuve, puis Squash and merge."

@@ -1,0 +1,44 @@
+name: Bootstrap labels
+
+# À lancer une seule fois (onglet Actions > Bootstrap labels > Run workflow).
+# Crée ou met à jour tous les labels utilisés par les agents.
+on:
+  workflow_dispatch:
+
+jobs:
+  labels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Create labels
+        run: |
+          create() { gh label create "$1" --color "$2" --description "$3" --force; }
+          # Type
+          create "idea"                 "FBCA04" "Idée créée avec le template (lance l'analyste)"
+          create "sub-task"             "C5DEF5" "Sous-ticket créé par l'architecte"
+          # Domaine et risque
+          create "area:backend"         "1D76DB" "Sous-ticket backend (.NET)"
+          create "area:frontend"        "0E8A16" "Sous-ticket frontend (React)"
+          create "risk:low"             "C2E0C6" "Risque faible : merge automatique possible"
+          create "risk:high"            "B60205" "Risque élevé : merge par le mainteneur uniquement"
+          # États de l'idée
+          create "refine"               "D4C5F9" "Relancer l'analyste"
+          create "to-validate"          "FEF2C0" "Spec prête : à valider par le mainteneur"
+          create "approved"             "0E8A16" "Spec validée : lance l'architecte"
+          create "planned"              "BFD4F2" "Idée découpée en sous-tickets"
+          # États des sous-tickets et des PR
+          create "ready-for-agent"      "5319E7" "Lance l'agent d'implémentation"
+          create "ci-failed"            "E99695" "CI rouge : lance l'agent de correction"
+          create "ai-approved"          "0E8A16" "Relecteur IA : aucun problème bloquant"
+          create "ai-changes-requested" "D93F0B" "Relecteur IA : corrections demandées"
+          create "ai-attempt-1"         "EDEDED" "Première tentative de correction automatique"
+          create "ai-attempt-2"         "EDEDED" "Deuxième tentative de correction automatique"
+          create "ready-to-merge"       "0E8A16" "À valider et merger par le mainteneur"
+          # Escalades
+          create "needs-clarification"  "D876E3" "L'agent pose une question"
+          create "needs-human"          "B60205" "Problème détecté : intervention nécessaire"
