@@ -2,6 +2,7 @@
 name: Idée
 about: Idée brute à raffiner par l'agent
 title: "[Idée] "
+labels: ["idea"]
 ---
 
 ## Idée (2-3 lignes)
