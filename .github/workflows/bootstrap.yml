@@ -21,6 +21,8 @@ jobs:
           # Type
           create "idea"                 "FBCA04" "Idée créée avec le template (lance l'analyste)"
           create "sub-task"             "C5DEF5" "Sous-ticket créé par l'architecte"
+          create "breakdown"            "F9D0C4" "Idée à découper en petites stories (mode découpage)"
+          create "story"                "BFDADC" "Petite tâche du Backlog : se lance avec le label refine"
           # Domaine et risque
           create "area:backend"         "1D76DB" "Sous-ticket backend (.NET)"
           create "area:frontend"        "0E8A16" "Sous-ticket frontend (React)"

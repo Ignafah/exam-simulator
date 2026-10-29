@@ -40,6 +40,12 @@ jobs:
           LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name] | join(",")')
           if echo ",$LABELS," | grep -q ",to-validate,"; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
+            # Mode "découpage" : l'idée produit des stories en attente dans le Backlog (jamais lancées automatiquement).
+            if echo ",$LABELS," | grep -q ",breakdown,"; then
+              echo "mode=breakdown" >> "$GITHUB_OUTPUT"
+            else
+              echo "mode=normal" >> "$GITHUB_OUTPUT"
+            fi
           else
             gh issue edit "$ISSUE" --remove-label approved || true
             gh issue comment "$ISSUE" --body "Validation ignorée : aucune spec en attente (label to-validate absent)."
@@ -51,7 +57,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Plan with Claude
-        if: steps.precheck.outputs.ok == 'true'
+        if: steps.precheck.outputs.ok == 'true' && steps.precheck.outputs.mode == 'normal'
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         env:
@@ -115,8 +121,60 @@ jobs:
             Enfin, poste sur l'idée un commentaire récapitulatif (tableau : numéro, titre, domaine, risque, dépendances) :
             gh issue comment ${{ github.event.issue.number }} --body-file /tmp/plan.md
 
+      - name: Create backlog stories with Claude
+        if: steps.precheck.outputs.ok == 'true' && steps.precheck.outputs.mode == 'breakdown'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: >-
+            --model ${{ vars.MODEL_PLANNING || 'opus' }}
+            --max-turns 60
+            --allowedTools "Read,Glob,Grep,Write,Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh issue create:*),Bash(gh issue comment:*)"
+          prompt: |
+            Tu es l'agent architecte du projet décrit dans CLAUDE.md, en MODE DÉCOUPAGE.
+            Lis d'abord et applique le skill .claude/skills/ticket-planning/SKILL.md, section "Mode découpage".
+
+            L'idée #${{ github.event.issue.number }} contient une liste de stories validée par le mainteneur.
+            1. Lis CLAUDE.md, puis l'idée et TOUS ses commentaires : gh issue view ${{ github.event.issue.number }} --comments
+               La liste à créer = la dernière liste de stories de l'analyste, corrigée par les réponses du mainteneur (qui font foi).
+            2. Reprise après échec : liste les stories existantes (gh issue list --label story --state all --limit 200)
+               et ne recrée JAMAIS une story dont le corps contient déjà "Parent : #${{ github.event.issue.number }}" avec le même titre.
+            3. Crée UNE issue par story, dans l'ordre recommandé, avec le format du skill
+               (corps dans /tmp/story-<n>.md) :
+               gh issue create --title "[Story] <titre court>" --body-file /tmp/story-<n>.md --label story
+               Utilise les numéros réels des stories déjà créées dans la ligne "Dépend de".
+               N'ajoute AUCUN autre label (ni sub-task, ni area, ni risk, ni ready-for-agent) : chaque story attend le feu vert du mainteneur.
+            4. Poste sur l'idée un récapitulatif (tableau : numéro, titre, domaine pressenti, taille, dépend de),
+               puis la phrase : "Pour lancer une story : pose le label refine dessus, en commençant par le haut du tableau."
+               gh issue comment ${{ github.event.issue.number }} --body-file /tmp/plan.md
+            N'écris aucun code.
+
+      - name: Verify backlog stories
+        if: always() && steps.precheck.outputs.ok == 'true' && steps.precheck.outputs.mode == 'breakdown'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          COUNT=$(gh issue list --state all --label story --limit 300 --json body --jq '.[].body' \
+            | grep -cE "^Parent ?: ?#${ISSUE}([^0-9]|$)" || true)
+
+          if [ "$COUNT" -gt 0 ]; then
+            gh issue edit "$ISSUE" --remove-label to-validate --remove-label approved
+            gh issue comment "$ISSUE" --body "Découpage terminé : $COUNT story(s) créée(s) dans le Backlog. Cette idée est close ; chaque story se lance avec le label refine."
+            gh issue close "$ISSUE" --reason completed
+            echo "OK : $COUNT story(s) créée(s)."
+            exit 0
+          fi
+
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          gh issue edit "$ISSUE" --remove-label approved --add-label needs-human || true
+          gh issue comment "$ISSUE" --body "L'architecte n'a créé aucune story. Intervention nécessaire. Journal : $RUN_URL"
+          exit 1
+
       - name: Verify plan and start the dispatcher
-        if: always() && steps.precheck.outputs.ok == 'true'
+        if: always() && steps.precheck.outputs.ok == 'true' && steps.precheck.outputs.mode == 'normal'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GITHUB_TOKEN_FOR_DISPATCH: ${{ secrets.GITHUB_TOKEN }}

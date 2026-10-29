@@ -61,6 +61,10 @@ jobs:
             4. Lis le code existant concerné.
             5. N'écris AUCUN code et ne modifie AUCUN fichier du projet.
 
+            MODE DÉCOUPAGE : si l'issue porte le label "breakdown", n'écris PAS une spec classique.
+            Applique la section "Mode découpage" du skill spec-writing et écris dans /tmp/spec.md
+            la liste des stories proposées, au format décrit dans le skill. Ignore alors le format ci-dessous.
+
             Rédige la spec dans le fichier /tmp/spec.md avec exactement ces sections :
 
             ## Résumé (2 lignes, compréhensibles par un débutant)
