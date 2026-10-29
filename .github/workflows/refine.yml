@@ -45,10 +45,12 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: >-
+            --model ${{ vars.MODEL_PLANNING || 'opus' }}
             --max-turns 20
             --allowedTools "Read,Glob,Grep,Write,Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh issue comment:*),Bash(gh issue edit:*)"
           prompt: |
-            Tu es analyste technique sur le projet décrit dans CLAUDE.md.
+            Tu es l'agent analyste du projet décrit dans CLAUDE.md.
+            Lis d'abord et applique le skill .claude/skills/spec-writing/SKILL.md.
             Ta mission : transformer l'idée de l'issue #${{ github.event.issue.number }} en spécification.
 
             1. Lis CLAUDE.md en entier.

@@ -101,6 +101,15 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
+      - name: Configure reviewer skills
+        id: config
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          # Script lu depuis main : une branche d'agent ne peut pas modifier la configuration du relecteur.
+          git show origin/main:.github/scripts/agent-config.sh > "$RUNNER_TEMP/agent-config.sh"
+          bash "$RUNNER_TEMP/agent-config.sh" "$(gh pr view "$PR" --json labels --jq '[.labels[].name] | join(",")')"
+
       - name: Reset previous verdict
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -115,10 +124,13 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_bots: "*"
           claude_args: >-
+            --model ${{ vars.MODEL_REVIEW || 'opus' }}
             --max-turns 30
             --allowedTools "Read,Glob,Grep,Write,Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*),Bash(gh pr comment:*),Bash(gh pr edit:*)"
           prompt: |
-            Tu es le relecteur de code du projet décrit dans CLAUDE.md. Tu ne modifies AUCUN fichier.
+            Tu es l'agent relecteur du projet décrit dans CLAUDE.md. Tu ne modifies AUCUN fichier.
+            Lis d'abord et applique le skill .claude/skills/code-review/SKILL.md,
+            puis les skills du domaine de la PR : ${{ steps.config.outputs.skills }}
             PR à relire : #${{ needs.route.outputs.pr }} (la CI est verte).
 
             1. Lis CLAUDE.md.

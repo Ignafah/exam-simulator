@@ -59,10 +59,12 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: >-
+            --model ${{ vars.MODEL_PLANNING || 'opus' }}
             --max-turns 30
             --allowedTools "Read,Glob,Grep,Write,Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh issue create:*),Bash(gh issue comment:*)"
           prompt: |
-            Tu es l'architecte du projet décrit dans CLAUDE.md.
+            Tu es l'agent architecte du projet décrit dans CLAUDE.md.
+            Lis d'abord et applique le skill .claude/skills/ticket-planning/SKILL.md.
             L'idée #${{ github.event.issue.number }} a une spec validée par le mainteneur.
             Ta mission : la découper en sous-tickets exécutables par des agents spécialisés. N'écris AUCUN code.
 

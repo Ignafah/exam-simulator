@@ -63,8 +63,10 @@ jobs:
 
           if echo ",$LABELS," | grep -q ",ai-attempt-1,"; then
             gh pr edit "$PR" --add-label ai-attempt-2
+            echo "attempt=2" >> "$GITHUB_OUTPUT"
           else
             gh pr edit "$PR" --add-label ai-attempt-1
+            echo "attempt=1" >> "$GITHUB_OUTPUT"
           fi
           echo "proceed=true" >> "$GITHUB_OUTPUT"
 
@@ -125,11 +127,14 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_bots: "*"
+          # Escalade : la 2e tentative utilise le modèle le plus puissant.
           claude_args: >-
+            --model ${{ steps.attempt.outputs.attempt == '2' && (vars.MODEL_PLANNING || 'opus') || (vars.MODEL_DEV || 'sonnet') }}
             --max-turns 60
             --allowedTools "${{ steps.config.outputs.tools }}"
           prompt: |
-            Tu es le développeur ${{ steps.config.outputs.area }} du projet décrit dans CLAUDE.md.
+            Tu es l'agent ${{ steps.config.outputs.area }} du projet décrit dans CLAUDE.md.
+            Tes compétences : lis d'abord et applique ces skills : ${{ steps.config.outputs.skills }}
             Tu corriges la PR #${{ github.event.pull_request.number }} (branche ${{ github.event.pull_request.head.ref }}, déjà extraite).
             Raison : ${{ github.event.label.name }}.
 
