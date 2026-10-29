@@ -40,3 +40,24 @@ Dépend de : #<numéros séparés par des virgules> | aucun
 
 ## Récapitulatif sur l'idée
 Un tableau : numéro, titre, domaine, risque, dépend de. Puis une phrase sur l'ordre d'exécution.
+
+## Mode découpage (label `breakdown`)
+L'idée contient une liste de stories validée par le mainteneur. Tu crées **une issue par story**, label `story` uniquement.
+Une story n'est **pas** un sous-ticket : elle ne sera jamais lancée automatiquement. Le mainteneur posera `refine` dessus
+quand il voudra la traiter (spec, validation, puis découpage normal en sous-ticket).
+
+Format exact du corps d'une story :
+```
+Parent : #<idée>
+Dépend de : #<numéros de stories> | aucun
+
+## Story
+En tant que <utilisateur>, je veux <action> afin de <bénéfice>.
+## Critères d'acceptation (aperçu)
+(2 à 4 puces ; la spec détaillée viendra au moment du refine)
+## Domaine pressenti
+backend | frontend
+## Décisions du mainteneur à respecter
+## Hors périmètre
+```
+Titre : `[Story] <verbe à l'infinitif + objet>`, court et précis.
