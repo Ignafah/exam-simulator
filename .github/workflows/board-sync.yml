@@ -1,0 +1,78 @@
+name: Board sync
+
+# Déplace automatiquement les cartes du board selon l'état réel des issues (labels, PR, fermeture).
+# Sans IA. Ne dépend pas de AUTOMATION_ENABLED : le board reste à jour même agents arrêtés.
+on:
+  issues:
+    types: [opened, reopened, closed, labeled, unlabeled]
+  pull_request:
+    types: [opened, reopened, closed]
+  workflow_dispatch:     # resynchronise toutes les issues (à lancer une fois après l'installation)
+  schedule:
+    - cron: '23 * * * *' # filet de sécurité : resynchronise les issues ouvertes toutes les heures
+
+# Pour une même issue, seule la synchronisation la plus récente compte (elle lit l'état actuel).
+concurrency:
+  group: board-${{ github.event.issue.number || github.event.pull_request.head.ref || 'all' }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+      PROJECT_OWNER: ${{ github.repository_owner }}
+      PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
+    steps:
+      - name: Checkout main (script)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Check configuration
+        run: |
+          if [ -z "$PROJECT_TOKEN" ] || [ -z "$PROJECT_NUMBER" ]; then
+            echo "::error::Secret PROJECT_TOKEN ou variable PROJECT_NUMBER manquant."
+            exit 1
+          fi
+
+      - name: Select issues
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          case "$EVENT" in
+            issues)
+              NUMBERS="$ISSUE_NUMBER" ;;
+            pull_request)
+              # Seules les PR d'agent (branche ai/issue-N du dépôt) font bouger une carte.
+              if [ "$HEAD_REPO" = "$GH_REPO" ] && [[ "$HEAD_REF" =~ ^ai/issue-([0-9]+)$ ]]; then
+                NUMBERS="${BASH_REMATCH[1]}"
+              else
+                NUMBERS=""
+              fi ;;
+            workflow_dispatch)
+              NUMBERS=$(gh issue list --state all --limit 200 --json number --jq '.[].number' | tr '\n' ' ') ;;
+            schedule)
+              NUMBERS=$(gh issue list --state open --limit 200 --json number --jq '.[].number' | tr '\n' ' ') ;;
+          esac
+          echo "numbers=$NUMBERS" >> "$GITHUB_OUTPUT"
+          echo "Issues à synchroniser : ${NUMBERS:-aucune}"
+
+      - name: Sync board
+        if: steps.select.outputs.numbers != ''
+        env:
+          NUMBERS: ${{ steps.select.outputs.numbers }}
+        run: |
+          # shellcheck disable=SC2086 # découpage voulu : une liste de numéros
+          bash .github/scripts/board-sync.sh $NUMBERS
