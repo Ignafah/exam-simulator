@@ -350,6 +350,11 @@ Spécialités et fichiers modifiables (vérifié automatiquement, toute PR hors 
 
 Un sous-ticket ne touche qu'un seul domaine. Une évolution qui touche backend et frontend est découpée en deux sous-tickets.
 
+**Mode découpage** (template « Découpage en stories », labels `idea` + `breakdown`) : l'analyste propose une liste
+de petites stories, le mainteneur la valide (`approved`), l'architecte crée une issue `story` par élément puis ferme l'idée.
+Les stories restent dans le Backlog et ne sont **jamais** lancées automatiquement : le mainteneur pose `refine`
+sur la story de son choix, qui suit ensuite le flux normal (spec → `approved` → sous-ticket → agent).
+
 ### Agents, modèles et compétences
 
 | Agent | Workflow | Modèle (variable du repo, valeur par défaut) | Compétences (`.claude/skills/`) |
