@@ -34,3 +34,30 @@ Critères d'acceptation · Approche technique · Hypothèses · Questions ouvert
 
 ## Style
 Français simple, phrases courtes, termes techniques expliqués en une demi-phrase la première fois.
+
+## Mode découpage (label `breakdown`)
+L'idée demande de découper une fonctionnalité en **petites stories**, et non une spec à implémenter.
+Ta sortie est une **liste de stories proposée**, que le mainteneur valide, corrige ou complète.
+
+### Ce qu'est une « petite » story
+- Une seule taille : **S**. Un seul domaine (backend OU frontend). Une seule PR de moins de 150 lignes environ.
+- Un seul comportement observable, ou une seule brique technique indispensable (entité, endpoint, écran).
+- Le mainteneur doit pouvoir la valider en moins de 10 minutes.
+- Indépendante autant que possible ; sinon, dépendances explicites.
+- Si son titre contient « et », elle est probablement à couper en deux.
+
+### Format de sortie (dans /tmp/spec.md)
+```
+## Résumé (2 lignes)
+## Avis critique
+(prérequis manquants, contenu nécessaire, risques, ce qui est prématuré)
+## Stories proposées
+| # | Titre | En tant que… je veux… afin de… | Domaine | Dépend de |
+## Ordre recommandé
+(du socle vers l'interface ; les premières stories doivent pouvoir démarrer tout de suite)
+## Hors périmètre de la fonctionnalité
+## Questions ouvertes
+(avec une réponse proposée par défaut pour chacune)
+```
+Numérote les stories (S1, S2…) : le mainteneur pourra répondre « OK sauf S4 : couper en deux ».
+Vise autant de stories que nécessaire pour respecter la taille, sans fusionner pour réduire leur nombre.
