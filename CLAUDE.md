@@ -65,6 +65,7 @@ La cible complète est décrite ci-dessous.
 ├── CLAUDE.md
 ├── docker-compose.yml          # PostgreSQL local
 ├── .config/dotnet-tools.json   # Outils .NET locaux (dotnet-ef)
+├── .claude/skills/             # Compétences des agents (une par domaine ou rôle)
 ├── docs/
 │   └── adr/                    # Décisions d'architecture (0001-xxx.md)
 ├── backend/
@@ -305,7 +306,7 @@ Closes #<numéro>
 
 ## 12. Interdits
 
-- Modifier `CLAUDE.md`, `.github/workflows/` ou les fichiers de configuration de sécurité.
+- Modifier `CLAUDE.md`, `.github/`, `.claude/` ou les fichiers de configuration de sécurité.
 - Pousser sur `main` ou merger une PR.
 - Désactiver, supprimer ou affaiblir un test pour le faire passer.
 - Ajouter `#pragma warning disable`, `// @ts-ignore` ou `eslint-disable` sans justification écrite dans la PR.
@@ -345,6 +346,20 @@ Conventions lues par des programmes (à respecter au caractère près, en début
 Spécialités et fichiers modifiables (vérifié automatiquement, toute PR hors périmètre est refusée) :
 - `area:backend` : `backend/`, `docs/`, `README.md`, `.gitignore`, `docker-compose.yml`, `.config/dotnet-tools.json`
 - `area:frontend` : `frontend/`, `docs/`, `README.md`, `.gitignore`
-- Jamais : `.github/`, `CLAUDE.md`, `legacy/`
+- Jamais : `.github/`, `.claude/`, `CLAUDE.md`, `legacy/`
 
 Un sous-ticket ne touche qu'un seul domaine. Une évolution qui touche backend et frontend est découpée en deux sous-tickets.
+
+### Agents, modèles et compétences
+
+| Agent | Workflow | Modèle (variable du repo, valeur par défaut) | Compétences (`.claude/skills/`) |
+|---|---|---|---|
+| Analyste | `refine.yml` | `MODEL_PLANNING` = `opus` | `spec-writing` |
+| Architecte | `architect.yml` | `MODEL_PLANNING` = `opus` | `ticket-planning` |
+| Backend | `implement.yml` (`area:backend`) | `MODEL_DEV` = `sonnet` | `backend-dotnet`, `ef-core-migrations` |
+| Frontend | `implement.yml` (`area:frontend`) | `MODEL_DEV` = `sonnet` | `frontend-react` |
+| Relecteur | `review.yml` | `MODEL_REVIEW` = `opus` | `code-review` + compétences du domaine |
+| Correcteur | `fix.yml` | `MODEL_DEV`, puis `MODEL_PLANNING` à la 2e tentative | compétences du domaine |
+| Planificateur | `dispatch.yml` | aucun (script) | — |
+
+Les règles valables partout restent dans ce fichier. Les recettes propres à un domaine vont dans sa compétence.
