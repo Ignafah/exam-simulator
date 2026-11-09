@@ -26,7 +26,12 @@ export default function SubjectsPage() {
       {data && data.items.length > 0 && (
         <ul className="subjects-page__list">
           {data.items.map((subject) => (
-            <SubjectCard key={subject.id} name={subject.name} categoryName={subject.categoryName} />
+            <SubjectCard
+              key={subject.id}
+              id={subject.id}
+              name={subject.name}
+              categoryName={subject.categoryName}
+            />
           ))}
         </ul>
       )}

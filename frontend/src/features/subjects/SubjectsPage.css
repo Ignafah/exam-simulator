@@ -25,10 +25,27 @@
 }
 
 .subject-card {
-  padding: 1rem;
   border: 1px solid #d1d5db;
   border-radius: 0.5rem;
   min-width: 0;
+}
+
+.subject-card__link {
+  display: block;
+  min-height: 44px;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.subject-card__link:hover .subject-card__name {
+  text-decoration: underline;
+}
+
+.subject-card__link:focus-visible {
+  outline: 3px solid #1e40af;
+  outline-offset: 2px;
 }
 
 .subject-card__name {
