@@ -147,4 +147,25 @@ public sealed class Question
             topicId,
             choiceList.AsReadOnly()));
     }
+
+    public Result<bool> Check(IEnumerable<Guid>? selectedChoiceIds)
+    {
+        var selected = selectedChoiceIds is null ? new HashSet<Guid>() : selectedChoiceIds.ToHashSet();
+
+        if (selected.Count == 0)
+        {
+            return Result<bool>.Failure(QuestionErrors.NoChoiceSelected);
+        }
+
+        var knownIds = Choices.Select(choice => choice.Id).ToHashSet();
+
+        if (!selected.IsSubsetOf(knownIds))
+        {
+            return Result<bool>.Failure(QuestionErrors.UnknownChoice);
+        }
+
+        var correctIds = Choices.Where(choice => choice.IsCorrect).Select(choice => choice.Id).ToHashSet();
+
+        return Result<bool>.Success(selected.SetEquals(correctIds));
+    }
 }
