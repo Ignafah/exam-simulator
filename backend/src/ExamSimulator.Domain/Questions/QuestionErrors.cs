@@ -21,4 +21,10 @@ public static class QuestionErrors
     public static readonly Error TopicRequired = new("Question.TopicRequired", "Le thème de la question est obligatoire.");
 
     public static readonly Error NotEnoughChoices = new("Question.NotEnoughChoices", "Une question doit avoir au moins 2 choix.");
+
+    public static readonly Error ExactlyOneCorrectChoiceRequired = new("Question.ExactlyOneCorrectChoiceRequired", "Une question à choix unique ou vrai/faux doit avoir exactement 1 bonne réponse.");
+
+    public static readonly Error AtLeastOneCorrectChoiceRequired = new("Question.AtLeastOneCorrectChoiceRequired", "Une question à choix multiples doit avoir au moins 1 bonne réponse.");
+
+    public static readonly Error TrueFalseRequiresTwoChoices = new("Question.TrueFalseRequiresTwoChoices", "Une question vrai/faux doit avoir exactement 2 choix.");
 }

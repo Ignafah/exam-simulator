@@ -152,6 +152,69 @@ public sealed class QuestionTests
         Question.Create("Énoncé", QuestionType.SingleChoice, "Explication", "Source", Guid.Empty, null).Error.ShouldBe(QuestionErrors.TopicRequired);
     }
 
+    private static List<Choice> Choices(int total, int correct) =>
+        [.. Enumerable.Range(0, total).Select(i => Choice.Create($"Choix {i}", i < correct).Value)];
+
+    [Theory]
+    [InlineData(QuestionType.SingleChoice, 3, 1)]
+    [InlineData(QuestionType.TrueFalse, 2, 1)]
+    [InlineData(QuestionType.MultipleChoice, 4, 2)]
+    [InlineData(QuestionType.MultipleChoice, 4, 1)]
+    [InlineData(QuestionType.MultipleChoice, 3, 3)]
+    public void Create_WithValidCorrectChoiceCount_Succeeds(QuestionType type, int total, int correct)
+    {
+        Question.Create("Énoncé", type, "Explication", "Source", TopicId, Choices(total, correct)).IsSuccess.ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData(QuestionType.SingleChoice, 3, 0)]
+    [InlineData(QuestionType.SingleChoice, 3, 2)]
+    [InlineData(QuestionType.SingleChoice, 2, 2)]
+    [InlineData(QuestionType.TrueFalse, 2, 0)]
+    [InlineData(QuestionType.TrueFalse, 2, 2)]
+    public void Create_WithWrongCorrectChoiceCount_FailsWithExactlyOneCorrectChoiceRequired(QuestionType type, int total, int correct)
+    {
+        var result = Question.Create("Énoncé", type, "Explication", "Source", TopicId, Choices(total, correct));
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.ShouldBe(QuestionErrors.ExactlyOneCorrectChoiceRequired);
+        result.Error.ShouldNotBeNull().Code.ShouldBe("Question.ExactlyOneCorrectChoiceRequired");
+    }
+
+    [Fact]
+    public void Create_MultipleChoiceWithoutCorrectChoice_FailsWithAtLeastOneCorrectChoiceRequired()
+    {
+        var result = Question.Create("Énoncé", QuestionType.MultipleChoice, "Explication", "Source", TopicId, Choices(3, 0));
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.ShouldBe(QuestionErrors.AtLeastOneCorrectChoiceRequired);
+        result.Error.ShouldNotBeNull().Code.ShouldBe("Question.AtLeastOneCorrectChoiceRequired");
+    }
+
+    [Fact]
+    public void Create_TrueFalseWithThreeChoices_FailsWithTrueFalseRequiresTwoChoices()
+    {
+        var result = Question.Create("Énoncé", QuestionType.TrueFalse, "Explication", "Source", TopicId, Choices(3, 1));
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.ShouldBe(QuestionErrors.TrueFalseRequiresTwoChoices);
+        result.Error.ShouldNotBeNull().Code.ShouldBe("Question.TrueFalseRequiresTwoChoices");
+    }
+
+    [Fact]
+    public void Create_ChecksChoiceCountBeforeCorrectChoices()
+    {
+        Question.Create("Énoncé", QuestionType.SingleChoice, "Explication", "Source", TopicId, Choices(1, 0))
+            .Error.ShouldBe(QuestionErrors.NotEnoughChoices);
+    }
+
+    [Fact]
+    public void Create_WithUndefinedTypeAndNoCorrectChoice_FailsWithTypeInvalid()
+    {
+        Question.Create("Énoncé", (QuestionType)99, "Explication", "Source", TopicId, Choices(3, 0))
+            .Error.ShouldBe(QuestionErrors.TypeInvalid);
+    }
+
     [Fact]
     public void Question_HasNoPublicConstructor()
     {

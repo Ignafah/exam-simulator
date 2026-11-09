@@ -8,6 +8,7 @@ public sealed class Question
     public const int ExplanationMaxLength = 4000;
     public const int SourceMaxLength = 500;
     public const int MinChoices = 2;
+    public const int TrueFalseChoiceCount = 2;
 
     private Question(
         Guid id,
@@ -100,6 +101,41 @@ public sealed class Question
         if (choiceList is null || choiceList.Count < MinChoices || choiceList.Any(choice => choice is null))
         {
             return Result<Question>.Failure(QuestionErrors.NotEnoughChoices);
+        }
+
+        var correctCount = choiceList.Count(choice => choice.IsCorrect);
+
+        switch (type)
+        {
+            case QuestionType.TrueFalse:
+                if (choiceList.Count != TrueFalseChoiceCount)
+                {
+                    return Result<Question>.Failure(QuestionErrors.TrueFalseRequiresTwoChoices);
+                }
+
+                if (correctCount != 1)
+                {
+                    return Result<Question>.Failure(QuestionErrors.ExactlyOneCorrectChoiceRequired);
+                }
+
+                break;
+            case QuestionType.SingleChoice:
+                if (correctCount != 1)
+                {
+                    return Result<Question>.Failure(QuestionErrors.ExactlyOneCorrectChoiceRequired);
+                }
+
+                break;
+            case QuestionType.MultipleChoice:
+                if (correctCount < 1)
+                {
+                    return Result<Question>.Failure(QuestionErrors.AtLeastOneCorrectChoiceRequired);
+                }
+
+                break;
+            default:
+                // Le type est déjà validé par Enum.IsDefined : un autre cas est une erreur de programmation.
+                throw new InvalidOperationException($"Type de question non géré : {type}.");
         }
 
         return Result<Question>.Success(new Question(
