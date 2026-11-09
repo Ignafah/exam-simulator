@@ -27,4 +27,8 @@ public static class QuestionErrors
     public static readonly Error AtLeastOneCorrectChoiceRequired = new("Question.AtLeastOneCorrectChoiceRequired", "Une question à choix multiples doit avoir au moins 1 bonne réponse.");
 
     public static readonly Error TrueFalseRequiresTwoChoices = new("Question.TrueFalseRequiresTwoChoices", "Une question vrai/faux doit avoir exactement 2 choix.");
+
+    public static readonly Error NoChoiceSelected = new("Question.NoChoiceSelected", "Au moins un choix doit être sélectionné.");
+
+    public static readonly Error UnknownChoice = new("Question.UnknownChoice", "Un des choix sélectionnés n'appartient pas à la question.");
 }
