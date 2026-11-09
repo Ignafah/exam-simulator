@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import SubjectsPage from './SubjectsPage.tsx'
 
@@ -22,7 +23,9 @@ function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <SubjectsPage />
+      <MemoryRouter>
+        <SubjectsPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
 }
@@ -110,8 +113,35 @@ describe('SubjectsPage', () => {
 
     expect(await screen.findByText('Alpha')).toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
-    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('link')).toHaveLength(1)
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/subjects/1')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('page=1')
+  })
+
+  it('affiche chaque sujet comme un lien accessible vers sa page', async () => {
+    const body = pageBody([
+      subject('11111111-1111-1111-1111-111111111111', 'AZ-204', 'Tech'),
+      subject('22222222-2222-2222-2222-222222222222', 'Attaché territorial', 'Concours public'),
+    ])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(body)))
+
+    renderPage()
+
+    const links = await screen.findAllByRole('link')
+    expect(links).toHaveLength(2)
+    expect(links[0]).toHaveAccessibleName(/AZ-204/)
+    expect(links[0]).toHaveAttribute('href', '/subjects/11111111-1111-1111-1111-111111111111')
+    expect(links[1]).toHaveAttribute('href', '/subjects/22222222-2222-2222-2222-222222222222')
+  })
+
+  it('n’affiche aucun lien de sujet si l’API répond 500', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ title: 'Erreur' }, 500)))
+
+    renderPage()
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Réessayer' })).toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
 })

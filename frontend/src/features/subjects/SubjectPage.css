@@ -1,0 +1,28 @@
+.subject-page {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.subject-page h1 {
+  margin: 0 0 1rem;
+  font-size: 1.75rem;
+  color: #1e40af;
+}
+
+.subject-page__back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (min-width: 768px) {
+  .subject-page {
+    padding: 4rem 2rem;
+  }
+
+  .subject-page h1 {
+    font-size: 2.5rem;
+  }
+}
