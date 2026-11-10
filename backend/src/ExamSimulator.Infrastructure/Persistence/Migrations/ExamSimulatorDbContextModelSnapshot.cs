@@ -70,6 +70,37 @@ namespace ExamSimulator.Infrastructure.Persistence.Migrations
                     b.ToTable("subjects", (string)null);
                 });
 
+            modelBuilder.Entity("ExamSimulator.Domain.Subjects.Topic", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subject_id");
+
+                    b.Property<decimal>("Weight")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("weight");
+
+                    b.HasKey("Id")
+                        .HasName("pk_topics");
+
+                    b.HasIndex("SubjectId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_topics_subject_id_name");
+
+                    b.ToTable("topics", (string)null);
+                });
+
             modelBuilder.Entity("ExamSimulator.Domain.Subjects.Subject", b =>
                 {
                     b.HasOne("ExamSimulator.Domain.Subjects.Category", null)
@@ -78,6 +109,16 @@ namespace ExamSimulator.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_subjects_categories_category_id");
+                });
+
+            modelBuilder.Entity("ExamSimulator.Domain.Subjects.Topic", b =>
+                {
+                    b.HasOne("ExamSimulator.Domain.Subjects.Subject", null)
+                        .WithMany()
+                        .HasForeignKey("SubjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_topics_subjects_subject_id");
                 });
 #pragma warning restore 612, 618
         }

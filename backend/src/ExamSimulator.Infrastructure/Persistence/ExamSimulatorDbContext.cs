@@ -11,6 +11,8 @@ public sealed class ExamSimulatorDbContext(DbContextOptions<ExamSimulatorDbConte
 
     public DbSet<Subject> Subjects => Set<Subject>();
 
+    public DbSet<Topic> Topics => Set<Topic>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ExamSimulatorDbContext).Assembly);
 }
