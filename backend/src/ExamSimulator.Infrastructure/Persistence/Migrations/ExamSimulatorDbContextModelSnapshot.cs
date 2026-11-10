@@ -22,6 +22,83 @@ namespace ExamSimulator.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("ExamSimulator.Domain.Questions.Choice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("IsCorrect")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_correct");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("question_id");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id")
+                        .HasName("pk_choices");
+
+                    b.HasIndex("QuestionId", "Position")
+                        .IsUnique()
+                        .HasDatabaseName("ix_choices_question_id_position");
+
+                    b.ToTable("choices", (string)null);
+                });
+
+            modelBuilder.Entity("ExamSimulator.Domain.Questions.Question", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Explanation")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("explanation");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("text");
+
+                    b.Property<Guid>("TopicId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("topic_id");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_questions");
+
+                    b.HasIndex("TopicId")
+                        .HasDatabaseName("ix_questions_topic_id");
+
+                    b.ToTable("questions", (string)null);
+                });
+
             modelBuilder.Entity("ExamSimulator.Domain.Subjects.Category", b =>
                 {
                     b.Property<Guid>("Id")
@@ -101,6 +178,26 @@ namespace ExamSimulator.Infrastructure.Persistence.Migrations
                     b.ToTable("topics", (string)null);
                 });
 
+            modelBuilder.Entity("ExamSimulator.Domain.Questions.Choice", b =>
+                {
+                    b.HasOne("ExamSimulator.Domain.Questions.Question", null)
+                        .WithMany("Choices")
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_choices_questions_question_id");
+                });
+
+            modelBuilder.Entity("ExamSimulator.Domain.Questions.Question", b =>
+                {
+                    b.HasOne("ExamSimulator.Domain.Subjects.Topic", null)
+                        .WithMany()
+                        .HasForeignKey("TopicId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_questions_topics_topic_id");
+                });
+
             modelBuilder.Entity("ExamSimulator.Domain.Subjects.Subject", b =>
                 {
                     b.HasOne("ExamSimulator.Domain.Subjects.Category", null)
@@ -119,6 +216,11 @@ namespace ExamSimulator.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_topics_subjects_subject_id");
+                });
+
+            modelBuilder.Entity("ExamSimulator.Domain.Questions.Question", b =>
+                {
+                    b.Navigation("Choices");
                 });
 #pragma warning restore 612, 618
         }

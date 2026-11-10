@@ -10,14 +10,15 @@ public sealed class Question
     public const int MinChoices = 2;
     public const int TrueFalseChoiceCount = 2;
 
+    private readonly List<Choice> _choices = [];
+
     private Question(
         Guid id,
         string text,
         QuestionType type,
         string explanation,
         string source,
-        Guid topicId,
-        IReadOnlyList<Choice> choices)
+        Guid topicId)
     {
         Id = id;
         Text = text;
@@ -25,7 +26,6 @@ public sealed class Question
         Explanation = explanation;
         Source = source;
         TopicId = topicId;
-        Choices = choices;
     }
 
     public Guid Id { get; }
@@ -40,7 +40,7 @@ public sealed class Question
 
     public Guid TopicId { get; }
 
-    public IReadOnlyList<Choice> Choices { get; }
+    public IReadOnlyList<Choice> Choices => _choices.AsReadOnly();
 
     public static Result<Question> Create(
         string? text,
@@ -138,14 +138,16 @@ public sealed class Question
                 throw new InvalidOperationException($"Type de question non géré : {type}.");
         }
 
-        return Result<Question>.Success(new Question(
+        var question = new Question(
             Guid.CreateVersion7(),
             trimmedText,
             type,
             trimmedExplanation,
             trimmedSource,
-            topicId,
-            choiceList.AsReadOnly()));
+            topicId);
+        question._choices.AddRange(choiceList);
+
+        return Result<Question>.Success(question);
     }
 
     public Result<bool> Check(IEnumerable<Guid>? selectedChoiceIds)
