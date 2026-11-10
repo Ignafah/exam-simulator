@@ -1,4 +1,5 @@
 using ExamSimulator.Application.Abstractions;
+using ExamSimulator.Application.Questions;
 using ExamSimulator.Application.Subjects;
 using ExamSimulator.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -32,6 +33,7 @@ public static class DependencyInjection
         services.AddScoped<ICategoryRepository, CategoryRepository>();
         services.AddScoped<ISubjectRepository, SubjectRepository>();
         services.AddScoped<ITopicRepository, TopicRepository>();
+        services.AddScoped<IQuestionRepository, QuestionRepository>();
 
         return services;
     }
