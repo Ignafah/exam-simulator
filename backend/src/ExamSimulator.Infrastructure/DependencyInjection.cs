@@ -31,6 +31,7 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<ExamSimulatorDbContext>());
         services.AddScoped<ICategoryRepository, CategoryRepository>();
         services.AddScoped<ISubjectRepository, SubjectRepository>();
+        services.AddScoped<ITopicRepository, TopicRepository>();
 
         return services;
     }
